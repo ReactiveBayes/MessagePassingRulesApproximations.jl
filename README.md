@@ -28,5 +28,4 @@ A, b = approximate(Linearization(), x -> x^2, (3.0,))          # (6.0, -9.0)
 - Tests: `make test` runs the suite as CI does; `make test test_args="name:Gauss"` selects items
   by tag, by name or by file. `make help` lists the other targets: `docs`, `docs-serve`, `format`,
   `check-format`, `test-fast`.
-- Depends on LinearAlgebra, FastCholesky, FastGaussQuadrature and ForwardDiff only, on no
-  distribution package. Julia 1.10 or later. MIT licence.
+- Julia 1.10 or later. MIT licence.
