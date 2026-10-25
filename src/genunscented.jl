@@ -101,7 +101,7 @@ approximation_short_name(::GenConstrainedUnscented) = "GenCUT"
 ## The point sets
 
 # A scalar input: the mean, `m - u σ` and `m + v σ`, with weights `w₀`, `w⁻` and `w⁺`.
-mutable struct GenSigmaPoints{T}
+struct GenSigmaPoints{T}
     m::T
     σ::T
     u::T
@@ -175,18 +175,11 @@ function prepare!(points::GenSigmaPoints, method::AnyGenUnscented, m::Real, V::R
     K = K <= smallest ? 1.001 * smallest : K
     u = (-s + sqrt(4 * K / V^2 - 3 * s^2)) / 2
     v = u + s
-    points.m, points.σ = m, σ
-    points.u, points.v = constrain_scalar(method, m, σ, u, v, s)
-    set_scalar_weights!(points)
-    return points
-end
-
-function set_scalar_weights!(points::GenSigmaPoints)
-    u, v = points.u, points.v
-    points.wplus = inv(v * (u + v))
-    points.wminus = (v / u) * points.wplus
-    points.w0 = 1 - points.wplus - points.wminus
-    return points
+    u, v = constrain_scalar(method, m, σ, u, v, s)
+    wplus = inv(v * (u + v))
+    wminus = (v / u) * wplus
+    # A scalar point set is a plain value: `prepare!` returns a new one.
+    return typeof(points)(m, σ, u, v, 1 - wplus - wminus, wminus, wplus)
 end
 
 function prepare!(points::GenSigmaPointsMv, method::AnyGenUnscented, m::AbstractVector, V::AbstractMatrix, S::AbstractVector, K::AbstractVector)
@@ -306,6 +299,8 @@ end
 ## The points
 
 npoints(::GenSigmaPoints) = 3
+fixed_npoints(::GenSigmaPoints) = Val(3)
+is_value(::GenSigmaPoints) = true
 npoints(points::GenSigmaPointsMv) = 2 * length(points.m) + 1
 
 point!(points::GenSigmaPoints, i) = i == 1 ? points.m : (i == 2 ? points.m - points.u * points.σ : points.m + points.v * points.σ)

@@ -68,7 +68,7 @@ function getpoints end
 ## The point sets
 
 # A scalar normal: the nodes mapped to `m + √(2v) ξᵢ`, the weights divided by `√π`.
-mutable struct HermitePoints{N, T, S}
+struct HermitePoints{N, T, S}
     nodes::N
     m::T
     scale::S
@@ -99,12 +99,10 @@ end
 check_nodes(points, gh) = length(points.nodes.piter) == length(gh.piter) ||
     throw(DimensionMismatch(lazy"the point set is for $(length(points.nodes.piter)) nodes, not $(length(gh.piter))"))
 
-function prepare!(points::HermitePoints, gh::GaussHermiteCubature, m::Real, v::Real)
+# A scalar point set is a plain value: `prepare!` returns a new one.
+function prepare!(points::HermitePoints{N, T, S}, gh::GaussHermiteCubature, m::Real, v::Real) where {N, T, S}
     check_nodes(points, gh)
-    points.nodes = gh
-    points.m = m
-    points.scale = sqrt(2 * v)
-    return points
+    return HermitePoints{N, T, S}(gh, m, sqrt(2 * v))
 end
 
 function prepare!(points::HermiteGridPoints, gh::GaussHermiteCubature, m::AbstractVector, V::AbstractMatrix)
@@ -118,6 +116,7 @@ function prepare!(points::HermiteGridPoints, gh::GaussHermiteCubature, m::Abstra
 end
 
 npoints(points::HermitePoints) = length(points.nodes.piter)
+is_value(::HermitePoints) = true
 npoints(points::HermiteGridPoints) = length(points.nodes.piter)^length(points.m)
 
 point!(points::HermitePoints, i) = points.m + points.scale * points.nodes.piter[i]

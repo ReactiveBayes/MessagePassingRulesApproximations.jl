@@ -72,7 +72,9 @@ function pointset end
 
 Places the points of `points` for the parameters `params` of `method`'s measure: factorises the
 covariance, computes the weights. It writes every buffer it reads, so a point set prepared for
-other parameters, or never prepared, gives the same result.
+other parameters, or never prepared, gives the same result. It returns the prepared point set:
+`points` itself when it is mutable, a new value when it is an immutable one, as a scalar point
+set of a few numbers is, so that it lives on the stack. Callers use the result.
 """
 function prepare! end
 
@@ -169,18 +171,47 @@ end
 
 Base.show(io::IO, ws::PointSetWorkspace) = print(io, "PointSetWorkspace(", npoints(ws.points), " points)")
 
-workspace(method::AbstractApproximationMethod, f::F, params::Vararg{Any, N}) where {F, N} = first(prepared_workspace(method, f, params...))
+workspace(method::AbstractApproximationMethod, f::F, params::Vararg{Any, N}) where {F, N} = first(prepared_workspace(Val(false), method, f, params...))
 
 # The workspace, prepared for `params`, and `f` at its first point. The allocating operations
-# start from both, so that they evaluate `f` once per point, as the in-place ones do.
-function prepared_workspace(method::AbstractApproximationMethod, f::F, params::Vararg{Any, N}) where {F, N}
-    points = pointset(method, params...)
-    prepare!(points, method, params...)
+# start from both, so that they evaluate `f` once per point, as the in-place ones do. With
+# `Val(true)`, a point set of a fixed, small number of points keeps the values of a scalar `f` in
+# a tuple, so that an allocating operation on scalars allocates as little as the arithmetic does.
+function prepared_workspace(tuples::Val, method::AbstractApproximationMethod, f::F, params::Vararg{Any, N}) where {F, N}
+    points = held(tuples, prepare!(pointset(method, params...), method, params...))
     layout = input_layout(params...)
     first_value = evaluate(primal(f), layout, point!(points, 1))
-    ys, dy = output_buffers(first_value, typeof(weight(points, 1)), npoints(points))
+    ys, dy = value_buffers(tuples, fixed_npoints(points), first_value, typeof(weight(points, 1)), npoints(points))
     return PointSetWorkspace(points, layout, ys, point_buffer(center(points)), dy), first_value
 end
+
+# An immutable point set, in a workspace the in-place operations reuse, lives in a mutable holder
+# that `prepare!` replaces it in. The allocating operations, which prepare it once, keep it bare.
+mutable struct HeldPoints{P}
+    points::P
+end
+
+held(::Val{true}, points) = points
+held(::Val{false}, points) = is_value(points) ? HeldPoints(points) : points
+
+# Whether a point set is a plain value, which `prepare!` replaces rather than writes into.
+is_value(points) = false
+
+npoints(held::HeldPoints) = npoints(held.points)
+point!(held::HeldPoints, i) = point!(held.points, i)
+weight(held::HeldPoints, i) = weight(held.points, i)
+covweight(held::HeldPoints, i) = covweight(held.points, i)
+logweight(held::HeldPoints, i) = logweight(held.points, i)
+weightsign(held::HeldPoints, i) = weightsign(held.points, i)
+center(held::HeldPoints) = center(held.points)
+fixed_npoints(held::HeldPoints) = fixed_npoints(held.points)
+
+# `Val(n)` for a point set of `n` points whatever its parameters, such as the unscented
+# transform's scalar sigma points; `nothing` otherwise.
+fixed_npoints(points) = nothing
+
+value_buffers(::Val{true}, ::Val{K}, y::Real, ::Type{W}, n) where {K, W} = (ntuple(_ -> zero(promote_type(typeof(y), W)), Val(K)), nothing)
+value_buffers(tuples, fixed, y, ::Type{W}, n) where {W} = output_buffers(y, W, n)
 
 # The function whose values the operations combine: a `LogIntegrand`'s logarithm.
 primal(f) = f
@@ -195,7 +226,10 @@ output_buffers(y, ::Type, n) = throw(ArgumentError(lazy"the function must return
 point_buffer(::Real) = nothing
 point_buffer(x::AbstractVector) = similar(x)
 
-prepare_workspace!(ws::PointSetWorkspace, method, params::Vararg{Any, N}) where {N} = (prepare!(ws.points, method, params...); ws)
+prepare_workspace!(ws::PointSetWorkspace, method, params::Vararg{Any, N}) where {N} = (prepare_points!(ws.points, method, params...); ws)
+
+prepare_points!(points, method, params::Vararg{Any, N}) where {N} = prepare!(points, method, params...)
+prepare_points!(held::HeldPoints, method, params::Vararg{Any, N}) where {N} = (held.points = prepare!(held.points, method, params...); held)
 
 # `f` at the `i`-th point, or `first_value` for the first point when the caller has it.
 @inline value_at(f::F, ws, i, first_value) where {F} =
@@ -273,7 +307,7 @@ true
 ```
 """
 function expectation(method::AbstractApproximationMethod, f::F, params::Vararg{Any, N}) where {F, N}
-    ws, first_value = prepared_workspace(method, f, params...)
+    ws, first_value = prepared_workspace(Val(true), method, f, params...)
     return ws.dy === nothing ? expectation_kernel(ws, f, first_value) : expectation_kernel!(similar(ws.dy), ws, f, first_value)
 end
 
@@ -307,10 +341,7 @@ end
 # In log space: log Σᵢ sᵢ exp(log |wᵢ| + log f(xᵢ)), with `sᵢ` the weights' signs, shifted by the
 # largest term. A negative sum, which negative weights can give, has no logarithm.
 function expectation_kernel(ws::PointSetWorkspace, f::LogIntegrand, first_value)
-    points, terms = ws.points, ws.ys
-    for i in 1:npoints(points)
-        terms[i] = logweight(points, i) + value_at(log(f), ws, i, first_value)
-    end
+    points, terms = ws.points, with_log_terms(ws, f, first_value).ys
     largest = maximum(terms)
     isfinite(largest) || return largest
     total = zero(largest)
@@ -319,6 +350,35 @@ function expectation_kernel(ws::PointSetWorkspace, f::LogIntegrand, first_value)
     end
     return largest + log(total)
 end
+
+# The values the operations combine, in `ws.ys`, or, when it is a tuple, in a new workspace with
+# a new tuple: `f`'s values, the weights of a reweighted measure, the terms of a log-space sum.
+with_values(ws::PointSetWorkspace, f::F, first_value) where {F} = (evaluate_points!(ws, f, first_value); ws)
+with_values(ws::PointSetWorkspace{P, L, <:NTuple{K, Any}}, f::F, first_value) where {P, L, K, F} =
+    with_tuple(ws, ntuple(i -> value_at(f, ws, i, first_value), Val(K)))
+
+with_tilted_weights(ws::PointSetWorkspace, g::G, first_value) where {G} = (tilted_weights!(ws, g, first_value); ws)
+with_tilted_weights(ws::PointSetWorkspace{P, L, <:NTuple{K, Any}}, g::G, first_value) where {P, L, K, G} =
+    with_tuple(ws, ntuple(i -> weight(ws.points, i) * value_at(g, ws, i, first_value), Val(K)))
+function with_tilted_weights(ws::PointSetWorkspace{P, L, <:NTuple{K, Any}}, g::LogIntegrand, first_value) where {P, L, K}
+    terms = ntuple(i -> logweight(ws.points, i) + value_at(log(g), ws, i, first_value), Val(K))
+    largest = maximum(terms)
+    return with_tuple(ws, ntuple(i -> weightsign(ws.points, i) * exp(terms[i] - largest), Val(K)))
+end
+
+function with_log_terms(ws::PointSetWorkspace, f::LogIntegrand, first_value)
+    for i in 1:npoints(ws.points)
+        ws.ys[i] = logweight(ws.points, i) + value_at(log(f), ws, i, first_value)
+    end
+    return ws
+end
+with_log_terms(ws::PointSetWorkspace{P, L, <:NTuple{K, Any}}, f::LogIntegrand, first_value) where {P, L, K} =
+    with_tuple(ws, ntuple(i -> logweight(ws.points, i) + value_at(log(f), ws, i, first_value), Val(K)))
+
+with_tuple(ws::PointSetWorkspace, ys::Tuple) = PointSetWorkspace(ws.points, ws.layout, ys, ws.dx, ws.dy)
+
+# The values of a scalar `f`: a buffer, or a tuple for a fixed point set.
+const ScalarValues = Union{AbstractVector, Tuple}
 
 ## The moments of f(x): `approximate` and `forward_statistics`
 
@@ -340,7 +400,7 @@ end
 # The mean and covariance of the values in `ws.ys`, and, for `Val(true)`, their cross-covariance
 # with the points, written into the given outputs; a `nothing` output is a scalar, returned.
 # A scalar `f`:
-function pushforward_moments!(::Val{C}, cross, ws::PointSetWorkspace{P, L, <:AbstractVector, DX, Nothing}) where {C, P, L, DX}
+function pushforward_moments!(::Val{C}, cross, ws::PointSetWorkspace{P, L, <:ScalarValues, DX, Nothing}) where {C, P, L, DX}
     points, ys = ws.points, ws.ys
     n = npoints(points)
     m_tilde = weight(points, 1) * ys[1]
@@ -436,9 +496,9 @@ end
 
 # The array-valued outputs of `approximate` and `forward_statistics` for a workspace.
 moment_outputs(ws::PointSetWorkspace) = (similar(ws.dy), similar(ws.dy, length(ws.dy), length(ws.dy)))
-cross_output(ws::PointSetWorkspace{P, L, <:AbstractVector, Nothing}) where {P, L} = nothing
+cross_output(ws::PointSetWorkspace{P, L, <:ScalarValues, Nothing}) where {P, L} = nothing
 # The cross-covariance multiplies points by values: in the type both promote to.
-cross_output(ws::PointSetWorkspace{P, L, <:AbstractVector, <:AbstractVector}) where {P, L} = similar(ws.dx, promote_type(eltype(ws.ys), eltype(ws.dx)))
+cross_output(ws::PointSetWorkspace{P, L, <:ScalarValues, <:AbstractVector}) where {P, L} = similar(ws.dx, promote_type(eltype(ws.ys), eltype(ws.dx)))
 cross_output(ws::PointSetWorkspace{P, L, <:AbstractMatrix, Nothing}) where {P, L} =
     similar(ws.dy, promote_type(eltype(ws.dy), typeof(center(ws.points))), 1, length(ws.dy))
 cross_output(ws::PointSetWorkspace{P, L, <:AbstractMatrix, <:AbstractVector}) where {P, L} =
@@ -473,8 +533,8 @@ approximate(method::AbstractApproximationMethod, f::F, params::Vararg{Any, N}) w
 function approximate_pointset(method::AbstractApproximationMethod, f::F, params::Vararg{Any, N}) where {F, N}
     point = degenerate_input(method, params...)
     point === nothing || return degenerate_result(Val(false), f, input_layout(params...), point)
-    ws, first_value = prepared_workspace(method, f, params...)
-    evaluate_points!(ws, f, first_value)
+    ws, first_value = prepared_workspace(Val(true), method, f, params...)
+    ws = with_values(ws, f, first_value)
     if ws.dy === nothing
         m_tilde, V_tilde, _ = pushforward_moments!(Val(false), nothing, ws)
         return (m_tilde, V_tilde)
@@ -535,8 +595,8 @@ true
 function forward_statistics(method::AbstractApproximationMethod, f::F, params::Vararg{Any, N}) where {F, N}
     point = degenerate_input(method, params...)
     point === nothing || return degenerate_result(Val(true), f, input_layout(params...), point)
-    ws, first_value = prepared_workspace(method, f, params...)
-    evaluate_points!(ws, f, first_value)
+    ws, first_value = prepared_workspace(Val(true), method, f, params...)
+    ws = with_values(ws, f, first_value)
     cross = cross_output(ws)
     if ws.dy === nothing
         return pushforward_moments!(Val(true), cross, ws)
@@ -628,8 +688,8 @@ true
 ```
 """
 function approximate_meancov(method::AbstractApproximationMethod, g::G, params::Vararg{Any, N}) where {G, N}
-    ws, first_value = prepared_workspace(method, g, params...)
-    tilted_weights!(ws, g, first_value)
+    ws, first_value = prepared_workspace(Val(true), method, g, params...)
+    ws = with_tilted_weights(ws, g, first_value)
     ws.dx === nothing && return meancov_kernel(ws, meancov_eltype(params...))
     T = meancov_eltype(params...)
     d = length(ws.dx)
@@ -637,12 +697,12 @@ function approximate_meancov(method::AbstractApproximationMethod, g::G, params::
 end
 
 function approximate_meancov!(ws::PointSetWorkspace{P, L, <:AbstractVector, Nothing}, method::AbstractApproximationMethod, g::G, params::Vararg{Any, N}) where {P, L, G, N}
-    tilted_weights!(prepare_workspace!(ws, method, params...), g, nothing)
+    ws = with_tilted_weights(prepare_workspace!(ws, method, params...), g, nothing)
     return meancov_kernel(ws, meancov_eltype(params...))
 end
 
 function approximate_meancov!(μ::AbstractVector, Σ::AbstractMatrix, ws::PointSetWorkspace{P, L, <:AbstractVector, <:AbstractVector}, method::AbstractApproximationMethod, g::G, params::Vararg{Any, N}) where {P, L, G, N}
-    tilted_weights!(prepare_workspace!(ws, method, params...), g, nothing)
+    ws = with_tilted_weights(prepare_workspace!(ws, method, params...), g, nothing)
     return meancov_kernel!(μ, Σ, ws)
 end
 

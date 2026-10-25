@@ -218,7 +218,7 @@ check_unscented_dimension(extra::UnscentedExtra, d) =
 # The `2d + 1` sigma points: the mean, then `m ± Lₖ` for the columns `Lₖ` of the lower Cholesky
 # factor of `(d + λ) V`, alternating. `wm` and `wc` are the centre's weights in the mean and in
 # the covariance, `wi` every other point's.
-mutable struct SigmaPoints{T, L, W}
+struct SigmaPoints{T, L, W}
     m::T
     l::L
     wm::W
@@ -265,12 +265,11 @@ function pointset(method::Unscented, m::AbstractVector, V::AbstractMatrix)
     return SigmaPointsMv(Vector{T}(undef, d), Matrix{T}(undef, d, d), 'L', Vector{T}(undef, d), promote(wm, wc, wi)...)
 end
 
-function prepare!(points::SigmaPoints, method::Unscented, m::Real, V::Real)
+# A scalar point set is a plain value: `prepare!` returns a new one.
+function prepare!(points::SigmaPoints{T, L, W}, method::Unscented, m::Real, V::Real) where {T, L, W}
     check_unscented_dimension(method, 1)
-    lambda, points.wm, points.wc, points.wi = sigma_weights(method, 1)
-    points.m = m
-    points.l = sqrt((1 + lambda) * V)
-    return points
+    lambda, wm, wc, wi = sigma_weights(method, 1)
+    return SigmaPoints{T, L, W}(m, sqrt((1 + lambda) * V), wm, wc, wi)
 end
 
 function prepare!(points::SigmaPointsMv, method::Unscented, m::AbstractVector, V::AbstractMatrix)
@@ -285,6 +284,8 @@ function prepare!(points::SigmaPointsMv, method::Unscented, m::AbstractVector, V
 end
 
 npoints(::SigmaPoints) = 3
+fixed_npoints(::SigmaPoints) = Val(3)
+is_value(::SigmaPoints) = true
 npoints(points::SigmaPointsMv) = 2 * length(points.m) + 1
 
 point!(points::SigmaPoints, i) = i == 1 ? points.m : (iseven(i) ? points.m + points.l : points.m - points.l)

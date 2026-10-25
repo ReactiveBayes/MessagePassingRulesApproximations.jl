@@ -60,7 +60,7 @@ The first-order expansion of `g` at `x̂`, the function behind
 function local_linearization(g::G, x̂::Tuple) where {G}
     # `g` at `x̂` sizes the workspace, and is the value the expansion needs.
     r = g(x̂...)
-    ws = linearization_workspace(r, g, x̂, nothing, nothing)
+    ws = linearization_workspace(r, g, x̂, nothing, nothing, Val(false))
     return linearize_into(ws, g, x̂, r)
 end
 
@@ -88,12 +88,18 @@ end
 
 Base.show(io::IO, ::LinearizationWorkspace) = print(io, "LinearizationWorkspace()")
 
-workspace(method::Linearization, g::G, x̂::Tuple) where {G} = linearization_workspace(g(x̂...), g, x̂, nothing, nothing)
+workspace(method::Linearization, g::G, x̂::Tuple) where {G} = linearization_workspace(g(x̂...), g, x̂, nothing, nothing, Val(true))
 
 function workspace(method::Linearization, g::G, means::Tuple, covs::Tuple) where {G}
     μ, Σ = joint_buffers(means, covs)
-    return linearization_workspace(g(means...), g, means, μ, Σ)
+    return linearization_workspace(g(means...), g, means, μ, Σ, Val(true))
 end
+
+# ForwardDiff's configuration, which the workspace of the in-place forms keeps. Its chunk size is
+# the input's length, known at run time only, so the allocating forms, which build a workspace for
+# one call, leave it to ForwardDiff, behind its own function barrier.
+configuration(::Val{true}, make, f, x) = make(f, x)
+configuration(::Val{false}, make, f, x) = nothing
 
 joint_buffers(::Tuple{Union{Real, AbstractVector}}, ::Tuple{Union{Real, AbstractMatrix}}) = (nothing, nothing)
 function joint_buffers(means::Tuple, covs::Tuple)
@@ -102,36 +108,36 @@ function joint_buffers(means::Tuple, covs::Tuple)
 end
 
 # One scalar input: a derivative, a number or a vector.
-linearization_workspace(r::Real, g, x̂::Tuple{Real}, μ, Σ) = LinearizationWorkspace(g, nothing, nothing, nothing, nothing, μ, Σ)
-function linearization_workspace(r::AbstractVector, g, x̂::Tuple{Real}, μ, Σ)
+linearization_workspace(r::Real, g, x̂::Tuple{Real}, μ, Σ, cfg) = LinearizationWorkspace(g, nothing, nothing, nothing, nothing, μ, Σ)
+function linearization_workspace(r::AbstractVector, g, x̂::Tuple{Real}, μ, Σ, cfg)
     T = promote_type(eltype(r), typeof(first(x̂)))
     return LinearizationWorkspace(g, nothing, similar(r, T), similar(r, T), nothing, μ, Σ)
 end
 
 # One vector input: a gradient or a Jacobian of `g` itself.
-function linearization_workspace(r::Real, g, x̂::Tuple{AbstractVector}, μ, Σ)
+function linearization_workspace(r::Real, g, x̂::Tuple{AbstractVector}, μ, Σ, cfg)
     x = first(x̂)
-    return LinearizationWorkspace(g, nothing, similar(x, promote_type(eltype(x), typeof(r))), nothing, ForwardDiff.GradientConfig(g, x), μ, Σ)
+    return LinearizationWorkspace(g, nothing, similar(x, promote_type(eltype(x), typeof(r))), nothing, configuration(cfg, ForwardDiff.GradientConfig, g, x), μ, Σ)
 end
 
-function linearization_workspace(r::AbstractVector, g, x̂::Tuple{AbstractVector}, μ, Σ)
+function linearization_workspace(r::AbstractVector, g, x̂::Tuple{AbstractVector}, μ, Σ, cfg)
     x = first(x̂)
     T = promote_type(eltype(x), eltype(r))
-    return LinearizationWorkspace(g, nothing, Matrix{T}(undef, length(r), length(x)), similar(r, T), ForwardDiff.JacobianConfig(g, x), μ, Σ)
+    return LinearizationWorkspace(g, nothing, Matrix{T}(undef, length(r), length(x)), similar(r, T), configuration(cfg, ForwardDiff.JacobianConfig, g, x), μ, Σ)
 end
 
 # Several inputs: of their concatenation.
-function linearization_workspace(r::Real, g, x̂::Tuple, μ, Σ)
+function linearization_workspace(r::Real, g, x̂::Tuple, μ, Σ, cfg)
     x = __as_vec(x̂)
     split = SplitArguments(g, map(size, x̂))
-    return LinearizationWorkspace(split, x, similar(x), nothing, ForwardDiff.GradientConfig(split, x), μ, Σ)
+    return LinearizationWorkspace(split, x, similar(x), nothing, configuration(cfg, ForwardDiff.GradientConfig, split, x), μ, Σ)
 end
 
-function linearization_workspace(r::AbstractVector, g, x̂::Tuple, μ, Σ)
+function linearization_workspace(r::AbstractVector, g, x̂::Tuple, μ, Σ, cfg)
     x = __as_vec(x̂)
     split = SplitArguments(g, map(size, x̂))
     T = promote_type(eltype(x), eltype(r))
-    return LinearizationWorkspace(split, x, Matrix{T}(undef, length(r), length(x)), similar(r, T), ForwardDiff.JacobianConfig(split, x), μ, Σ)
+    return LinearizationWorkspace(split, x, Matrix{T}(undef, length(r), length(x)), similar(r, T), configuration(cfg, ForwardDiff.JacobianConfig, split, x), μ, Σ)
 end
 
 # The allocating form: the workspace's buffers are fresh, so they are the result.
@@ -146,6 +152,9 @@ value_of(g::G, x̂, r) where {G} = r
 approximate!(ws::LinearizationWorkspace, ::Linearization, g::G, x̂::Tuple) where {G} = linearize!(ws, g, x̂, nothing)
 approximate!(A::AbstractVector, ws::LinearizationWorkspace, ::Linearization, g::G, x̂::Tuple) where {G} = linearize!(A, ws, g, x̂, nothing)
 approximate!(A::AbstractVecOrMat, b::AbstractVector, ws::LinearizationWorkspace, ::Linearization, g::G, x̂::Tuple) where {G} = linearize!(A, b, ws, g, x̂, nothing)
+
+differentiate!(op, A, f, x, cfg) = op(A, f, x, cfg)
+differentiate!(op, A, f, x, ::Nothing) = op(A, f, x)
 
 # The differentiated function's argument: the input itself, or the inputs concatenated.
 differentiation_point(ws::LinearizationWorkspace{F, Nothing}, x̂) where {F} = first(x̂)
@@ -167,7 +176,7 @@ end
 function linearize!(A::AbstractVector, ws::LinearizationWorkspace{F, X, <:AbstractVector, Nothing}, g::G, x̂::Tuple, r) where {F, X, G}
     result = value_of(g, x̂, r)
     x = differentiation_point(ws, x̂)
-    ForwardDiff.gradient!(A, ws.f, x, ws.cfg)
+    differentiate!(ForwardDiff.gradient!, A, ws.f, x, ws.cfg)
     return (A', result - A' * x)
 end
 
@@ -184,7 +193,7 @@ end
 function linearize!(A::AbstractMatrix, b::AbstractVector, ws::LinearizationWorkspace, g::G, x̂::Tuple, r) where {G}
     result = value_of(g, x̂, r)
     x = differentiation_point(ws, x̂)
-    ForwardDiff.jacobian!(A, ws.f, x, ws.cfg)
+    differentiate!(ForwardDiff.jacobian!, A, ws.f, x, ws.cfg)
     for j in eachindex(b)
         acc = zero(eltype(b))
         for k in eachindex(x)
@@ -210,7 +219,7 @@ the array-valued outputs first, as for the other methods.
 function forward_statistics(method::Linearization, f::F, means::Tuple, covs::Tuple) where {F}
     r = f(means...)
     μ, Σ = joint_buffers(means, covs)
-    ws = linearization_workspace(r, f, means, μ, Σ)
+    ws = linearization_workspace(r, f, means, μ, Σ, Val(false))
     return linear_statistics_into(ws, f, means, covs, r)
 end
 
