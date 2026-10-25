@@ -65,25 +65,112 @@ of vectors in the multivariate case, in the order of [`getweights`](@ref).
 """
 function getpoints end
 
+## The point sets
+
+# A scalar normal: the nodes mapped to `m + √(2v) ξᵢ`, the weights divided by `√π`.
+mutable struct HermitePoints{N, T, S}
+    nodes::N
+    m::T
+    scale::S
+end
+
+# A normal in `d` dimensions: the tensor-product grid of `p^d` points, `m + √2 L ξ`, with `L` the
+# lower Cholesky factor of the covariance. A point's index is decoded into one node per dimension,
+# the first dimension varying fastest.
+mutable struct HermiteGridPoints{N, T}
+    nodes::N
+    m::Vector{T}
+    F::Matrix{T}
+    uplo::Char
+    unit::Vector{T}
+    x::Vector{T}
+end
+
+pointset(gh::GaussHermiteCubature, m::Real, v::Real) = HermitePoints(gh, m, sqrt(2 * v))
+
+function pointset(gh::GaussHermiteCubature, m::AbstractVector, V::AbstractMatrix)
+    T = float(promote_type(eltype(m), eltype(V)))
+    d = length(m)
+    return HermiteGridPoints(gh, Vector{T}(undef, d), Matrix{T}(undef, d, d), 'L', Vector{T}(undef, d), Vector{T}(undef, d))
+end
+
+check_nodes(points, gh) = length(points.nodes.piter) == length(gh.piter) ||
+    throw(DimensionMismatch(lazy"the point set is for $(length(points.nodes.piter)) nodes, not $(length(gh.piter))"))
+
+function prepare!(points::HermitePoints, gh::GaussHermiteCubature, m::Real, v::Real)
+    check_nodes(points, gh)
+    points.nodes = gh
+    points.m = m
+    points.scale = sqrt(2 * v)
+    return points
+end
+
+function prepare!(points::HermiteGridPoints, gh::GaussHermiteCubature, m::AbstractVector, V::AbstractMatrix)
+    length(m) == length(points.m) || throw(DimensionMismatch(lazy"the point set is for dimension $(length(points.m)), not $(length(m))"))
+    check_nodes(points, gh)
+    points.nodes = gh
+    copyto!(points.m, m)
+    points.uplo = cholesky_factor!(points.F, V)
+    return points
+end
+
+npoints(points::HermitePoints) = length(points.nodes.piter)
+npoints(points::HermiteGridPoints) = length(points.nodes.piter)^length(points.m)
+
+point!(points::HermitePoints, i) = points.m + points.scale * points.nodes.piter[i]
+weight(points::HermitePoints, i) = points.nodes.witer[i] / sqrt(π)
+logweight(points::HermitePoints, i) = log(points.nodes.witer[i]) - log(π) / 2
+center(points::HermitePoints) = points.m
+
+function point!(points::HermiteGridPoints, i)
+    p, index = length(points.nodes.piter), i - 1
+    for k in eachindex(points.unit)
+        points.unit[k] = points.nodes.piter[index % p + 1]
+        index ÷= p
+    end
+    return lower_mul_add!(points.x, points.m, sqrt(2), points.F, points.uplo, points.unit)
+end
+
+function weight(points::HermiteGridPoints, i)
+    p, index = length(points.nodes.piter), i - 1
+    w = one(eltype(points.nodes.witer))
+    for _ in eachindex(points.unit)
+        w *= points.nodes.witer[index % p + 1]
+        index ÷= p
+    end
+    return w / π^(length(points.m) / 2)
+end
+
+function logweight(points::HermiteGridPoints, i)
+    p, index = length(points.nodes.piter), i - 1
+    lw = zero(float(eltype(points.nodes.witer)))
+    for _ in eachindex(points.unit)
+        lw += log(points.nodes.witer[index % p + 1])
+        index ÷= p
+    end
+    return lw - length(points.m) * log(π) / 2
+end
+
+center(points::HermiteGridPoints) = points.m
+
+weightsign(::Union{HermitePoints, HermiteGridPoints}, i) = 1
+
+## The lazy points and weights
+
 getweights(gh::GaussHermiteCubature, mean::T, variance::T) where {T <: Real} =
     Base.Generator(weight -> weight / sqrt(π), gh.witer)
-
-function getweights(gh::GaussHermiteCubature, mean::AbstractVector{T}, covariance::AbstractMatrix{T}) where {T <: Real}
-    normalisation = π^(length(mean) / 2)
-    return Base.Generator(weights -> prod(weights) / normalisation, Iterators.product(Iterators.repeated(gh.witer, length(mean))...))
-end
 
 function getpoints(gh::GaussHermiteCubature, mean::T, variance::T) where {T <: Real}
     scale = sqrt(2 * variance)
     return Base.Generator(point -> mean + scale * point, gh.piter)
 end
 
+function getweights(gh::GaussHermiteCubature, mean::AbstractVector{T}, covariance::AbstractMatrix{T}) where {T <: Real}
+    points = prepare!(pointset(gh, mean, covariance), gh, mean, covariance)
+    return Base.Generator(i -> weight(points, i), 1:npoints(points))
+end
+
 function getpoints(gh::GaussHermiteCubature, mean::AbstractVector{T}, covariance::AbstractMatrix{T}) where {T <: Real}
-    sqrtP = cholsqrt(covariance)
-    point, unit = similar(mean), similar(mean)
-    return Base.Generator(Iterators.product(Iterators.repeated(gh.piter, length(mean))...)) do units
-        copyto!(unit, units)
-        copyto!(point, mean)
-        return mul!(point, sqrtP, unit, sqrt(2), 1.0) # mean + √2 · sqrtP · unit
-    end
+    points = prepare!(pointset(gh, mean, covariance), gh, mean, covariance)
+    return Base.Generator(i -> point!(points, i), 1:npoints(points))
 end

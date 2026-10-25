@@ -30,20 +30,23 @@ julia> approximate(Linearization(), x -> x^2, (3.0,))
 module MessagePassingRulesApproximations
 
 using LinearAlgebra
-using FastCholesky: cholinv, cholsqrt
+using FastCholesky: cholinv, cholsqrt, fastcholesky!
 import ForwardDiff, FastGaussQuadrature
 using Compat: @compat
 
 export AbstractApproximationMethod, approximation_name, approximation_short_name
 export Unscented, UT, UnscentedTransform
-export approximate, unscented_statistics, sigma_points_weights, smoothRTS
+export approximate, approximate!, forward_statistics, forward_statistics!, expectation, expectation!, LogIntegrand
+export unscented_statistics, sigma_points_weights, smoothRTS, smoothRTS!
 export Linearization, local_linearization
-export GaussHermiteCubature, ghcubature, getweights, getpoints, approximate_meancov
+export GaussHermiteCubature, ghcubature, getweights, getpoints, approximate_meancov, approximate_meancov!
 
 @compat public sigma_point_parameters
+@compat public AbstractWorkspace, workspace, pointset, prepare!, npoints, point!, weight, covweight, logweight, weightsign, center
 
 include("approximations.jl")
 include("shared.jl")
+include("pointsets.jl")
 include("unscented.jl")
 include("linearization.jl")
 include("gausshermite.jl")
