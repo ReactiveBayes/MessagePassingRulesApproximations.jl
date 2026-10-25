@@ -731,7 +731,7 @@ function pointset(method::AbstractApproximationMethod, m::Real, v::Real)
 end
 
 function pointset(method::AbstractApproximationMethod, m::AbstractVector, P::AbstractMatrix)
-    return GeneratedPoints(map(copy, getpoints(method, m, P)), collect(getweights(method, m, P)), copy(m))
+    return GeneratedPoints([copy(x) for x in getpoints(method, m, P)], collect(getweights(method, m, P)), copy(m))
 end
 
 function prepare!(points::GeneratedPoints, method::AbstractApproximationMethod, m::Real, v::Real)
@@ -742,7 +742,7 @@ function prepare!(points::GeneratedPoints, method::AbstractApproximationMethod, 
 end
 
 function prepare!(points::GeneratedPoints, method::AbstractApproximationMethod, m::AbstractVector, P::AbstractMatrix)
-    points.points = map(copy, getpoints(method, m, P))
+    points.points = [copy(x) for x in getpoints(method, m, P)]
     points.weights = collect(getweights(method, m, P))
     copyto!(points.center, m)
     return points

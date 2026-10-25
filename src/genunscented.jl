@@ -154,12 +154,8 @@ function pointset(method::AnyGenUnscented, m::AbstractVector, V::AbstractMatrix,
     return GenSigmaPointsMv(vector(), matrix(), matrix(), matrix(), vector(), vector(), vector(), vector(), vector(), vector(), vector(), vector(), zero(T), vector(), lower, upper)
 end
 
-bound_vectors(::GenUnscented, ::Type{T}, d) where {T} = (fill(T(-Inf), d), fill(T(Inf), d))
-function bound_vectors(method::GenConstrainedUnscented, ::Type{T}, d) where {T}
-    lower, upper = convert(Vector{T}, __as_vec(lowertuple(method.lower))), convert(Vector{T}, __as_vec(lowertuple(method.upper)))
-    (length(lower) == d && length(upper) == d) || throw(DimensionMismatch(lazy"the bounds have $(length(lower)) components, the input $d"))
-    return lower, upper
-end
+# The bounds' buffers, which `constrain!` writes on every call.
+bound_vectors(::AnyGenUnscented, ::Type{T}, d) where {T} = (Vector{T}(undef, d), Vector{T}(undef, d))
 
 # A normal's third and fourth central moments.
 prepare!(points::GenSigmaPoints, method::AnyGenUnscented, m::Real, V::Real) = prepare!(points, method, m, V, zero(V), 3 * V^2)
@@ -261,6 +257,8 @@ constrain!(::GenUnscented, points::GenSigmaPointsMv) = points
 
 function constrain!(method::GenConstrainedUnscented, points::GenSigmaPointsMv)
     m, L, lower, upper = points.m, points.L, points.lower, points.upper
+    copy_bounds!(lower, lowertuple(method.lower))
+    copy_bounds!(upper, lowertuple(method.upper))
     for k in eachindex(m)
         lower[k] <= m[k] <= upper[k] || throw(DomainError(m, "the mean must lie within the bounds"))
     end
@@ -280,6 +278,17 @@ function constrain!(method::GenConstrainedUnscented, points::GenSigmaPointsMv)
         points.u[k], points.v[k] = constrain_pair(points.u[k], points.v[k], points.a[k], method.shrink * reach_minus, method.shrink * reach_plus)
     end
     return points
+end
+
+# The bounds of several inputs, concatenated into `buffer`.
+function copy_bounds!(buffer::AbstractVector, bounds::Tuple)
+    starts = __starts_at(map(size, bounds))
+    length(buffer) == last(starts) + length(last(bounds)) - 1 ||
+        throw(DimensionMismatch(lazy"the bounds have $(last(starts) + length(last(bounds)) - 1) components, the input $(length(buffer))"))
+    foreach(bounds, starts) do bound, start
+        @inbounds __as_vec_copyto!(buffer, start, bound)
+    end
+    return buffer
 end
 
 # `u` and `v` within their reaches. A side that moves takes the other with it, `v - u = s`, so
