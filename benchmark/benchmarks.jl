@@ -42,6 +42,7 @@ SUITE["LN"]["approximate, 3 → 3"] = @benchmarkable approximate($lin, vector, (
 SUITE["LN"]["approximate!, 3 → 3"] = @benchmarkable approximate!($A, $b, $wsl, $lin, vector, ($μ,))
 
 if abspath(PROGRAM_FILE) == @__FILE__
+    tune!(SUITE)
     results = run(SUITE; verbose = false, seconds = 1)
     for (group, trials) in sort(collect(results); by = first), (name, trial) in sort(collect(trials); by = first)
         t = median(trial)
