@@ -88,6 +88,7 @@ mutable struct HermiteGridPoints{N, T, W}
     normalisation::W
 end
 
+# A value: built prepared.
 pointset(gh::GaussHermiteCubature, m::Real, v::Real) = HermitePoints(gh, m, sqrt(2 * v))
 
 function pointset(gh::GaussHermiteCubature, m::AbstractVector, V::AbstractMatrix)
@@ -168,11 +169,11 @@ function getpoints(gh::GaussHermiteCubature, mean::T, variance::T) where {T <: R
 end
 
 function getweights(gh::GaussHermiteCubature, mean::AbstractVector{T}, covariance::AbstractMatrix{T}) where {T <: Real}
-    points = prepare!(pointset(gh, mean, covariance), gh, mean, covariance)
+    points = prepared_pointset(gh, mean, covariance)
     return Base.Generator(i -> weight(points, i), 1:npoints(points))
 end
 
 function getpoints(gh::GaussHermiteCubature, mean::AbstractVector{T}, covariance::AbstractMatrix{T}) where {T <: Real}
-    points = prepare!(pointset(gh, mean, covariance), gh, mean, covariance)
+    points = prepared_pointset(gh, mean, covariance)
     return Base.Generator(i -> point!(points, i), 1:npoints(points))
 end

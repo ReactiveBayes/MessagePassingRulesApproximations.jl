@@ -136,10 +136,11 @@ end
 
 pointset(method::AnyGenUnscented, m::Real, V::Real) = pointset(method, m, V, zero(V), 3 * V^2)
 
-function pointset(::AnyGenUnscented, m::Real, V::Real, S::Real, K::Real)
+# A value: built prepared.
+function pointset(method::AnyGenUnscented, m::Real, V::Real, S::Real, K::Real)
     T = float(promote_type(typeof(m), typeof(V), typeof(S), typeof(K)))
     z = zero(T)
-    return GenSigmaPoints(T(m), z, z, z, z, z, z)
+    return prepare!(GenSigmaPoints(T(m), z, z, z, z, z, z), method, m, V, S, K)
 end
 
 pointset(method::AnyGenUnscented, m::AbstractVector, V::AbstractMatrix) = pointset(method, m, V, zeros(eltype(V), length(m)), zeros(eltype(V), length(m)))
@@ -385,7 +386,7 @@ input, vectors otherwise. The first point is the mean; then come the `d` points 
 `d` above. The same for [`GenConstrainedUnscented`](@ref).
 """
 function sigma_points_weights(method::AnyGenUnscented, params::Vararg{Any, N}) where {N}
-    points = prepare!(pointset(method, params...), method, params...)
+    points = prepared_pointset(method, params...)
     return materialise_points(points)
 end
 

@@ -178,7 +178,7 @@ workspace(method::AbstractApproximationMethod, f::F, params::Vararg{Any, N}) whe
 # `Val(true)`, a point set of a fixed, small number of points keeps the values of a scalar `f` in
 # a tuple, so that an allocating operation on scalars allocates as little as the arithmetic does.
 function prepared_workspace(tuples::Val, method::AbstractApproximationMethod, f::F, params::Vararg{Any, N}) where {F, N}
-    points = held(tuples, prepare!(pointset(method, params...), method, params...))
+    points = held(tuples, prepared_pointset(method, params...))
     layout = input_layout(params...)
     first_value = evaluate(primal(f), layout, point!(points, 1))
     ys, dy = value_buffers(tuples, fixed_npoints(points), first_value, typeof(weight(points, 1)), npoints(points))
@@ -201,9 +201,16 @@ Whether the point set `points` is a plain, immutable value, which [`prepare!`](@
 anew rather than writes into, as the scalar point sets of the unscented transform and of
 Gauss–Hermite cubature are: they then live on the stack in the allocating operations, and a
 workspace holds them in a mutable holder. `false` by default; a method whose point set is
-immutable returns `true`.
+immutable returns `true`, and its [`pointset`](@ref) returns the point set already prepared for
+the parameters it is given.
 """
 is_value(points) = false
+
+# The point set, prepared for `params`: a value's `pointset` already is, as it is built from them.
+function prepared_pointset(method, params::Vararg{Any, N}) where {N}
+    points = pointset(method, params...)
+    return is_value(points) ? points : prepare!(points, method, params...)
+end
 
 npoints(held::HeldPoints) = npoints(held.points)
 point!(held::HeldPoints, i) = point!(held.points, i)

@@ -320,7 +320,7 @@ The point set of [`workspace`](@ref)`(method, f, m, V)` holds the same points wi
 them, for the in-place operations.
 """
 function sigma_points_weights(method::Unscented, m::Real, V::Real)
-    points = prepare!(pointset(method, m, V), method, m, V)
+    points = prepared_pointset(method, m, V)
     sigma_points = (point!(points, 1), point!(points, 2), point!(points, 3))
     weights_m = (weight(points, 1), weight(points, 2), weight(points, 3))
     weights_c = (covweight(points, 1), covweight(points, 2), covweight(points, 3))
@@ -328,7 +328,7 @@ function sigma_points_weights(method::Unscented, m::Real, V::Real)
 end
 
 function sigma_points_weights(method::Unscented, m::AbstractVector, V::AbstractMatrix)
-    points = prepare!(pointset(method, m, V), method, m, V)
+    points = prepared_pointset(method, m, V)
     n = npoints(points)
     sigma_points = [copy(point!(points, i)) for i in 1:n]
     weights_m = [weight(points, i) for i in 1:n]
