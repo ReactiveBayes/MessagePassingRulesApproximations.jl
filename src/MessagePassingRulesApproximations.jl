@@ -40,8 +40,10 @@ export approximate, approximate!, forward_statistics, forward_statistics!, expec
 export unscented_statistics, sigma_points_weights, smoothRTS, smoothRTS!
 export Linearization, local_linearization
 export GaussHermiteCubature, ghcubature, getweights, getpoints, approximate_meancov, approximate_meancov!
+export GaussLaguerreQuadrature, glquadrature
 
 @compat public sigma_point_parameters
+@compat public GenUnscented, GenUT, GenUnscentedTransform, GenConstrainedUnscented, GenCUT
 @compat public AbstractWorkspace, workspace, pointset, prepare!, npoints, point!, weight, covweight, logweight, weightsign, center
 
 include("approximations.jl")
@@ -50,6 +52,8 @@ include("pointsets.jl")
 include("unscented.jl")
 include("linearization.jl")
 include("gausshermite.jl")
+include("gausslaguerre.jl")
+include("genunscented.jl")
 include("rts.jl")
 
 end
