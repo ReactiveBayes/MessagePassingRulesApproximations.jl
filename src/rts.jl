@@ -47,6 +47,17 @@ function smoothRTS(
     return smoothRTS!(similar(m_fw_in, T), similar(V_fw_in, T), ws, arguments...)
 end
 
+# A scalar input and a vector output: the cross-covariance is a row, `1 × n`, as
+# `forward_statistics` gives it, or an adjoint vector; the input's mean and variance are numbers.
+function smoothRTS_generic(
+        m_tilde::AbstractVector, V_tilde::AbstractMatrix, C_tilde::AbstractMatrix, m_fw_in::Real, V_fw_in::Real, m_bw_out::AbstractVector, V_bw_out::AbstractMatrix
+    )
+    all(isfinite, V_tilde) || return (m_fw_in, V_fw_in)
+    size(C_tilde, 1) == 1 || throw(DimensionMismatch(lazy"the cross-covariance of a scalar input is a row, not $(size(C_tilde, 1)) rows"))
+    K = C_tilde * cholinv(V_tilde + V_bw_out)
+    return (m_fw_in + only(K * (m_bw_out - m_tilde)), V_fw_in - only(K * C_tilde'))
+end
+
 # Any other shapes, scalars among them: the equations as they are.
 function smoothRTS_generic(
         m_tilde, V_tilde, C_tilde, m_fw_in, V_fw_in, m_bw_out, V_bw_out

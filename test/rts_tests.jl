@@ -179,3 +179,22 @@ end
     big = smoothRTS(0.5, 2.0, [1.0, 0.5, 0.2], m_fw, V_fw, big"1.0", 1.0)
     @test eltype(big[1]) === BigFloat
 end
+
+@testitem "smoothRTS: a scalar input and a vector output, its cross-covariance a row" tags = [:approximations] begin
+    using MessagePassingRulesApproximations, LinearAlgebra
+
+    # The forward statistics of `x ↦ [x, 2x]` for x ~ N(1, 2), from both methods, smoothed with a
+    # backward message on the output: a scalar marginal, the same for the row and the adjoint.
+    f(x) = [x, 2x]
+    m_bw, V_bw = [2.0, 3.0], Matrix(1.0I, 2, 2)
+    for method in (Unscented(; alpha = 1.0), Linearization())
+        m_tilde, V_tilde, C_tilde = forward_statistics(method, f, (1.0,), (2.0,))
+        @test size(C_tilde) == (1, 2)
+        m_in, V_in = smoothRTS(m_tilde, V_tilde, C_tilde, 1.0, 2.0, m_bw, V_bw)
+        @test m_in isa Real && V_in isa Real
+        # The exact update: precision 1/2 + 1 + 4, mean (1/2 + 2 + 2·3) / precision.
+        @test V_in ≈ 1 / 5.5
+        @test m_in ≈ 8.5 / 5.5
+        @test all(smoothRTS(m_tilde, V_tilde, [2.0, 4.0]', 1.0, 2.0, m_bw, V_bw) .≈ (m_in, V_in))
+    end
+end
