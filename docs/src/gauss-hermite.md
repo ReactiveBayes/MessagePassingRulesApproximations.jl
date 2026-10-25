@@ -56,4 +56,5 @@ ghcubature
 getpoints
 getweights
 approximate_meancov
+approximate_meancov!
 ```

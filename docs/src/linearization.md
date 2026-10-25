@@ -45,4 +45,5 @@ approximate(Linearization(), (x, y) -> x .- y, ([1.0, 2.0], [0.5, 0.5]))
 Linearization
 approximate(::Linearization, ::G, ::Tuple) where {G}
 local_linearization
+forward_statistics(::Linearization, ::F, ::Tuple, ::Tuple) where {F}
 ```

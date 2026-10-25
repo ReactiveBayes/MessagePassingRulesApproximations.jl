@@ -3,8 +3,7 @@
 
 The generalized unscented transform (Ebeigbe et al., 2021): `2d + 1` sigma points whose weights
 match the input's mean and covariance and the third and fourth central moments of each of its
-components, so it is exact for polynomials of degree three, and of degree four in each
-component. [`GenUT`](@ref) and [`GenUnscentedTransform`](@ref) are aliases.
+components, so it is exact for polynomials of degree four in each component. [`GenUT`](@ref) and [`GenUnscentedTransform`](@ref) are aliases.
 
 Its measure is given by `params = (m, V, S, K)`: the mean, the covariance, and the vectors of the
 components' third and fourth central moments, `S = E[(x - m)³]` and `K = E[(x - m)⁴]`, numbers for

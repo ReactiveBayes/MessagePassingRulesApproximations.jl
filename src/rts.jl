@@ -102,3 +102,13 @@ function smoothRTS!(m_in::AbstractVector, V_in::AbstractMatrix, ws::RTSWorkspace
     mul!(V_in, Kt', C_tilde', -1, true)
     return (m_in, V_in)
 end
+
+"""
+    smoothRTS!(m_in, V_in, ws, m_tilde, V_tilde, C_tilde, m_fw_in, V_fw_in, m_bw_out, V_bw_out) -> (m_in, V_in)
+
+The in-place form of [`smoothRTS`](@ref), for a vector input: the marginal's mean and covariance
+written into `m_in` and `V_in`, with `ws` from
+[`workspace`](@ref)`(smoothRTS, m_tilde, V_tilde, C_tilde, m_fw_in, V_fw_in, m_bw_out, V_bw_out)`.
+It allocates nothing of its own.
+"""
+smoothRTS!

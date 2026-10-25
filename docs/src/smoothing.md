@@ -85,4 +85,5 @@ precision \ (inv(V_in) * m_in + A' * inv(V_bw) * (m_bw - b)), inv(precision)
 
 ```@docs
 smoothRTS
+smoothRTS!
 ```

@@ -28,9 +28,12 @@ makedocs(
     pages = [
         "Overview" => "index.md",
         "Choosing a method" => "choosing.md",
+        "Expectations, in place" => "api.md",
         "Unscented transform" => "unscented.md",
+        "Generalized unscented transform" => "generalized-unscented.md",
         "Linearization" => "linearization.md",
         "Gauss–Hermite cubature" => "gauss-hermite.md",
+        "Gauss–Laguerre quadrature" => "gauss-laguerre.md",
         "Smoothing" => "smoothing.md",
     ],
     # Pages that show rule results as cards are larger than the defaults allow.

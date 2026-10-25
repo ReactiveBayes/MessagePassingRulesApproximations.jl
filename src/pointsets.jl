@@ -715,6 +715,46 @@ function meancov_kernel!(μ::AbstractVector, Σ::AbstractMatrix, ws::PointSetWor
     return μ, Σ
 end
 
+"""
+    expectation!(ws, method, f, params...)
+    expectation!(out, ws, method, f, params...)
+
+The in-place form of [`expectation`](@ref), in a [`workspace`](@ref): the result for a scalar
+`f`, written into `out` for a vector one. It allocates nothing of its own.
+"""
+expectation!
+
+"""
+    approximate!(ws, method, f, params...) -> (m, V)
+    approximate!(m, V, ws, method, f, params...) -> (m, V)
+
+The in-place form of [`approximate`](@ref), in a [`workspace`](@ref): the mean and variance for a
+scalar `f`, the mean and covariance written into `m` and `V` for a vector one. It allocates
+nothing of its own. [`Linearization`](@ref)'s returns its linear map instead.
+"""
+approximate!
+
+"""
+    forward_statistics!(ws, method, f, params...) -> (m, V, C)
+    forward_statistics!(C, ws, method, f, params...) -> (m, V, C)
+    forward_statistics!(m, V, C, ws, method, f, params...) -> (m, V, C)
+
+The in-place form of [`forward_statistics`](@ref), in a [`workspace`](@ref), with the
+array-valued parts of the result first: none when all three are scalars, `C` for a vector input
+and a scalar `f`, and `m`, `V` and `C` for a vector `f`. It allocates nothing of its own.
+"""
+forward_statistics!
+
+"""
+    approximate_meancov!(ws, method, g, m::Real, v::Real) -> (mean, variance)
+    approximate_meancov!(μ, Σ, ws, method, g, params...) -> (μ, Σ)
+
+The in-place form of [`approximate_meancov`](@ref), in a [`workspace`](@ref)`(method, g,
+params...)`: the moments for a scalar measure, written into `μ` and `Σ` for a vector one. It
+allocates nothing of its own for a point-set method.
+"""
+approximate_meancov!
+
 ## A method with `getpoints` and `getweights` only
 
 # A method of another package that defines `getpoints` and `getweights` for a normal, and not the
