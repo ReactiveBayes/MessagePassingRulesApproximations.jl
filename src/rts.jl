@@ -1,3 +1,9 @@
+# A vector input, with a vector or a scalar output: the in-place form, into fresh outputs.
+const RTSVectorArguments = Union{
+    Tuple{AbstractVector, AbstractMatrix, AbstractMatrix, AbstractVector, AbstractMatrix, AbstractVector, AbstractMatrix},
+    Tuple{Real, Real, AbstractVector, AbstractVector, AbstractMatrix, Real, Real},
+}
+
 """
     smoothRTS(m_tilde, V_tilde, C_tilde, m_fw_in, V_fw_in, m_bw_out, V_bw_out) -> (m_in, V_in)
 
@@ -31,14 +37,17 @@ Petersen, Hoffmann and Rostalski (2018), *On approximate nonlinear Gaussian mess
 factor graphs*, IEEE Statistical Signal Processing Workshop.
 """
 function smoothRTS(
-        m_tilde, V_tilde, C_tilde, m_fw_in::AbstractVector, V_fw_in::AbstractMatrix, m_bw_out, V_bw_out
+        m_tilde, V_tilde, C_tilde, m_fw_in, V_fw_in, m_bw_out, V_bw_out
     )
-    ws = workspace(smoothRTS, m_tilde, V_tilde, C_tilde, m_fw_in, V_fw_in, m_bw_out, V_bw_out)
+    arguments = (m_tilde, V_tilde, C_tilde, m_fw_in, V_fw_in, m_bw_out, V_bw_out)
+    arguments isa RTSVectorArguments || return smoothRTS_generic(arguments...)
+    ws = workspace(smoothRTS, arguments...)
     T = promote_type(eltype(m_fw_in), eltype(V_fw_in), eltype(C_tilde))
-    return smoothRTS!(similar(m_fw_in, T), similar(V_fw_in, T), ws, m_tilde, V_tilde, C_tilde, m_fw_in, V_fw_in, m_bw_out, V_bw_out)
+    return smoothRTS!(similar(m_fw_in, T), similar(V_fw_in, T), ws, arguments...)
 end
 
-function smoothRTS(
+# Any other shapes, scalars among them: the equations as they are.
+function smoothRTS_generic(
         m_tilde, V_tilde, C_tilde, m_fw_in, V_fw_in, m_bw_out, V_bw_out
     )
     # A forward output covariance that is not finite leaves nothing to correct with.
