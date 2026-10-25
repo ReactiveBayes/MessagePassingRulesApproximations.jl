@@ -1,11 +1,12 @@
 # MessagePassingRulesApproximations
 
 A rule for a nonlinear node needs the
-[pushforward](@extref MessagePassingRulesBase glossary-pushforward) of a normal through a
+[pushforward](@extref MessagePassingRulesBase glossary-pushforward) of a belief through a
 function: if `x` is normal, what are the mean and covariance of `f(x)`? This package computes it,
-and expectations under a normal, with three methods. It works on means and covariances, plain
-numbers and arrays, and knows nothing of message passing. Node packages, such as the Delta
-node's, build their rules on it.
+and expectations under a normal or a gamma. It works on means, covariances and other plain
+parameters, numbers and arrays, and knows nothing of message passing. Node packages, such as the
+Delta node's, build their rules on it. Every operation has an in-place form that allocates
+nothing.
 
 This site is for authors of such rules, and for anyone who wants to compare the methods on a
 function of their own.
@@ -46,10 +47,15 @@ normal's spread.
 - [Choosing a method](@ref): what each method needs and costs, and the three compared on one
   function against its exact moments.
 - [The unscented transform](@ref): sigma points, their weights, and moments through a function.
+- [Expectations, in place](@ref approximations-api): the operations every point-set method
+  shares, in log space, and their in-place forms with a workspace; how to add a method.
+- [The generalized unscented transform](@ref approximations-generalized-unscented): sigma points
+  that match the third and fourth moments too, and sigma points within bounds.
 - [Linearisation](@ref approximations-linearisation): the first-order expansion of a function,
   by automatic differentiation.
 - [Gauss–Hermite cubature](@ref): expectations under a normal, and the moments of a normal
   reweighted by a function.
+- [Gauss–Laguerre quadrature](@ref): expectations under a gamma.
 - [Smoothing](@ref): the Rauch–Tung–Striebel correction of an input's belief from a backward
   message, with either transform.
 

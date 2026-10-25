@@ -10,6 +10,12 @@ different way.
 | [`Linearization`](@ref) | `f` differentiable by ForwardDiff | the local linear map `(A, b)` | functions close to linear over the inputs' spread; exact for affine ones |
 | [`Unscented`](@ref) | `f` evaluated at `2d + 1` points | the output's mean and covariance | any function, no derivatives; accurate to second order |
 | [`GaussHermiteCubature`](@ref) | `f` evaluated at `p^d` points | weights and points, for any expectation | expectations and reweighted moments in a few dimensions |
+| [generalized unscented](@ref approximations-generalized-unscented) | `f` at `2d + 1` points, and the input's third and fourth moments | the output's mean and covariance | skewed or heavy-tailed inputs, whose third and fourth moments it matches |
+| [`GaussLaguerreQuadrature`](@ref) | `f` evaluated at `p` points | expectations under a gamma | positive quantities, rates and precisions |
+
+Every method but linearisation is a point set, and gives [`expectation`](@ref),
+[`approximate`](@ref), [`forward_statistics`](@ref) and [`approximate_meancov`](@ref), each with
+an in-place form that allocates nothing: see [Expectations, in place](@ref approximations-api).
 
 ## One function, every method
 

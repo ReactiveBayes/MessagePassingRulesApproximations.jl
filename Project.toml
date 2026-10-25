@@ -1,9 +1,11 @@
 name = "MessagePassingRulesApproximations"
 uuid = "36043009-14b3-4068-9fb9-f1e492c92d7d"
-version = "1.0.0"
+version = "1.1.0"
 
-# Numerics on means and covariances: Unscented, Linearization, Gauss–Hermite cubature and
-# smoothRTS. It depends on no MessagePassingRules package and on no distribution package.
+# Numerics on means, covariances and other plain parameters: the point-set methods (Unscented,
+# GenUnscented, Gauss–Hermite, Gauss–Laguerre), Linearization and smoothRTS, each with an in-place
+# form that allocates nothing. It depends on no MessagePassingRules package and on no
+# distribution package.
 
 [deps]
 Compat = "34da2185-b29b-5c13-b0c7-acf172513d20"
@@ -22,6 +24,7 @@ ForwardDiff = "0.10, 1"
 LinearAlgebra = "1.10"
 Logging = "1.10"
 Pkg = "1.10"
+StaticArrays = "1"
 Test = "1.10"
 TestItemRunner = "1"
 julia = "1.10"
@@ -31,8 +34,9 @@ Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 
 [targets]
-test = ["Aqua", "Documenter", "Logging", "Pkg", "Test", "TestItemRunner"]
+test = ["Aqua", "Documenter", "Logging", "Pkg", "StaticArrays", "Test", "TestItemRunner"]

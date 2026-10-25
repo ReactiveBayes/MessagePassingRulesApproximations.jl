@@ -144,9 +144,12 @@ end
 
 """
     approximate(method::Unscented, f, means::Tuple, covs::Tuple) -> (m, V)
+    approximate!(ws, method::Unscented, f, means, covs) -> (m, V)
+    approximate!(m, V, ws, method::Unscented, f, means, covs) -> (m, V)
 
 The mean and covariance of `f(x₁, x₂, …)` for independent normal inputs, by the unscented
-transform.
+transform. The in-place forms work in a [`workspace`](@ref) and allocate nothing of their own; see
+[`approximate`](@ref)`(method, f, params...)`, which every point-set method shares.
 
 # Arguments
 
@@ -163,192 +166,45 @@ transform.
 A `DomainError` when a covariance is infinite. A zero covariance is not an error: the input is a
 point, and the result is `f` at it with zero covariance, after a warning.
 """
-function approximate(
-        method::Unscented, f::F, means::Tuple, covs::Tuple
-    ) where {F}
-    # `Val(false)` indicates that we do not compute the `C` component
-    (m, V, _) = unscented_statistics(method, Val(false), f, means, covs)
-    return (m, V)
-end
+approximate(method::Unscented, f::F, means::Tuple, covs::Tuple) where {F} = approximate_pointset(method, f, means, covs)
 
 """
     unscented_statistics(method::Unscented, g, means::Tuple, covs::Tuple) -> (m, V, C)
 
 The output's mean `m` and covariance `V`, as [`approximate`](@ref)`(::Unscented, …)` computes
 them, and the cross-covariance `C` between the inputs, concatenated into one vector, and the
-output: the forward statistics [`smoothRTS`](@ref) takes. Arguments and errors are those of
-`approximate`; for a point input, `C` is zero.
+output: the forward statistics [`smoothRTS`](@ref) takes. It is
+[`forward_statistics`](@ref)`(method, g, means, covs)`, whose in-place form
+[`forward_statistics!`](@ref) allocates nothing. Arguments and errors are those of `approximate`;
+for a point input, `C` is zero.
 """
-function unscented_statistics(
-        method::Unscented, g::G, means::Tuple, covs::Tuple
-    ) where {G}
-    # By default we compute the `C` component, thus `Val(true)`
-    return unscented_statistics(method, Val(true), g, means, covs)
-end
+unscented_statistics(method::Unscented, g::G, means::Tuple, covs::Tuple) where {G} = forward_statistics(method, g, means, covs)
 
-function statistic_estimation(
-        ::Val{C}, first_element::T, g_sigma, sigma_points, m, weights_m, weights_c
-    ) where {C, T <: Real}
-    m_tilde = sum(weights_m .* g_sigma)
-    V_tilde = sum(weights_c .* (g_sigma .- m_tilde) .^ 2)
+# `Val(false)` skips the cross-covariance, which is then `nothing`.
+unscented_statistics(method::Unscented, ::Val{true}, g::G, means::Tuple, covs::Tuple) where {G} = forward_statistics(method, g, means, covs)
+unscented_statistics(method::Unscented, ::Val{false}, g::G, means::Tuple, covs::Tuple) where {G} = (approximate(method, g, means, covs)..., nothing)
 
-    # Compute `C_tilde` only if `C === true`
-    C_tilde = if C
-        sum(weights_c .* (sigma_points .- m) .* (g_sigma .- m_tilde))
-    else
-        nothing
-    end
-    return (m_tilde, V_tilde, C_tilde)
-end
+# A single input with an infinite covariance is an error; with a zero covariance it is a point:
+# the transformed output is a point too, with zero covariance and zero cross-covariance.
+degenerate_input(method::Unscented, means::Tuple{Real}, covs::Tuple{Real}) = degenerate_input(method, first(means), first(covs))
+degenerate_input(method::Unscented, means::Tuple{AbstractVector}, covs::Tuple{AbstractMatrix}) = degenerate_input(method, first(means), first(covs))
 
-function statistic_estimation(
-        ::Val{C}, first_element::V, g_sigma, sigma_points, m, weights_m, weights_c
-    ) where {C, V <: AbstractVector}
-    d_out = length(first(g_sigma))
-
-    @inbounds m_tilde = sum(wm * yi for (wm, yi) in zip(weights_m, g_sigma))
-    @inbounds V_tilde = sum(
-        wc * (yi - m_tilde) * (yi - m_tilde)' for
-            (wc, yi) in zip(weights_c, g_sigma)
-    )
-
-    # Compute `C_tilde` only if `C === true`
-    @inbounds C_tilde = if C
-        reshape(
-            sum(
-                wc * (xi - m) * (yi - m_tilde) for
-                    (wc, xi, yi) in zip(weights_c, sigma_points, g_sigma)
-            ),
-            1,
-            d_out,
-        )
-    else
-        nothing
-    end
-    return (m_tilde, V_tilde, C_tilde)
-end
-
-# A zero-covariance input means the input is known exactly, so the transformed output is a
-# point too: zero output covariance *and* zero cross-covariance with the input.
-#
-# The cross-covariance is a genuine zero, not `nothing` ("not computed"): consumers that ask
-# for it (`Val(true)`, i.e. the `DeltaFn(:ins)` marginal rules) do arithmetic with it, and
-# callers that do not ask discard the third element anyway, so a zero is correct for both and
-# keeps the return type stable.
-__unscented_parameters_zero_covariance(m::T) where {T <: Real} =
-    (m, zero(T), zero(T))
-__unscented_parameters_zero_covariance(m::AbstractVector{T}) where {T <: Real} =
-    (m, zeros(T, length(m), length(m)), zeros(T, length(m), length(m)))
-
-# Single univariate variable
-function unscented_statistics(
-        method::Unscented, ::Val{C}, g::G, means::Tuple{Real}, covs::Tuple{Real}
-    ) where {C, G}
-    m = first(means)
-    V = first(covs)
+function degenerate_input(::Unscented, m::Real, V::Real)
+    isinf(V) && throw(DomainError(V, "the unscented transform cannot be computed with an infinite variance"))
     if V == 0.0
-        @warn "Unscented transform called with zero covariance input (function $g)" maxlog = 1
-        resulting_m = g(m)
-        return __unscented_parameters_zero_covariance(resulting_m)
+        @warn "Unscented transform called with zero covariance input" maxlog = 1
+        return m
     end
-
-    if any(isinf, V)
-        throw(
-            DomainError(
-                "unscented_statistics cannot be computed with infinite variance $covs",
-            ),
-        )
-    end
-
-    (sigma_points, weights_m, weights_c) = sigma_points_weights(method, m, V)
-
-    # Evaluate g at sigma points
-    g_sigma = g.(sigma_points)
-
-    # Compute output statistics depending on the output variate type
-    return statistic_estimation(
-        Val(C), first(g_sigma), g_sigma, sigma_points, m, weights_m, weights_c
-    )
+    return nothing
 end
 
-# Single multivariate inbound
-function unscented_statistics(
-        method::Unscented,
-        ::Val{C},
-        g::G,
-        means::Tuple{AbstractVector},
-        covs::Tuple{AbstractMatrix},
-    ) where {C, G}
-    m = first(means)
-    V = first(covs)
-    if any(isinf, V)
-        throw(
-            DomainError(
-                "unscented_statistics cannot be computed with infinite variance $covs",
-            ),
-        )
+function degenerate_input(::Unscented, m::AbstractVector, V::AbstractMatrix)
+    any(isinf, V) && throw(DomainError(V, "the unscented transform cannot be computed with an infinite covariance"))
+    if all(iszero, V)
+        @warn "Unscented transform called with zero covariance input"
+        return m
     end
-
-    if all(vec -> all(x -> x == 0.0, vec), covs)
-        @warn "Unscented transform called with zero covariance input (function $g)"
-        resulting_m = g(m)
-        return __unscented_parameters_zero_covariance(resulting_m)
-    end
-
-    (sigma_points, weights_m, weights_c) = sigma_points_weights(method, m, V)
-
-    d = length(m)
-    g_sigma = g.(sigma_points)
-    @inbounds m_tilde = sum(weights_m[k + 1] * g_sigma[k + 1] for k in 0:(2d))
-    @inbounds V_tilde = sum(
-        weights_c[k + 1] *
-            ((g_sigma[k + 1] - m_tilde) * (g_sigma[k + 1] - m_tilde)') for
-            k in 0:(2d)
-    )
-
-    # Compute `C_tilde` only if `C === true`
-    @inbounds C_tilde = if C
-        sum(
-            weights_c[k + 1] *
-                (sigma_points[k + 1] - m) *
-                (g_sigma[k + 1] - m_tilde)' for k in 0:(2d)
-        )
-    else
-        nothing
-    end
-    return (m_tilde, V_tilde, C_tilde)
-end
-
-# Multiple inbounds of possibly mixed variate type
-function unscented_statistics(
-        method::Unscented, ::Val{C}, g::G, ms::Tuple, Vs::Tuple
-    ) where {C, G}
-    (m, V, ds) = joint_mean_cov(ms, Vs)
-
-    (sigma_points, weights_m, weights_c) = sigma_points_weights(method, m, V)
-
-    g_sigma = [g(__splitjoin(sp, ds)...) for sp in sigma_points] # Unpack each sigma point in g
-
-    d = sum(prod.(ds)) # Dimensionality of joint
-    @inbounds m_tilde = sum(weights_m[k + 1] * g_sigma[k + 1] for k in 0:(2d)) # Vector
-    @inbounds V_tilde = sum(
-        weights_c[k + 1] *
-            ((g_sigma[k + 1] - m_tilde) * (g_sigma[k + 1] - m_tilde)') for
-            k in 0:(2d)
-    ) # Matrix
-
-    # Compute `C_tilde` only if `C === true`
-    @inbounds C_tilde = if C
-        sum(
-            weights_c[k + 1] *
-                (sigma_points[k + 1] - m) *
-                (g_sigma[k + 1] - m_tilde)' for k in 0:(2d)
-        )
-    else
-        nothing
-    end
-
-    return (m_tilde, V_tilde, C_tilde)
+    return nothing
 end
 
 # A method built for a dimension takes inputs of that dimension only.
@@ -356,6 +212,100 @@ check_unscented_dimension(method::Unscented, d) = check_unscented_dimension(gete
 check_unscented_dimension(::Nothing, d) = nothing
 check_unscented_dimension(extra::UnscentedExtra, d) =
     getL(extra) == d || throw(DimensionMismatch("`Unscented($(getL(extra)))` was built for dimension $(getL(extra)), not $d"))
+
+## The point sets
+
+# The `2d + 1` sigma points: the mean, then `m ± Lₖ` for the columns `Lₖ` of the lower Cholesky
+# factor of `(d + λ) V`, alternating. `wm` and `wc` are the centre's weights in the mean and in
+# the covariance, `wi` every other point's.
+struct SigmaPoints{T, L, W}
+    m::T
+    l::L
+    wm::W
+    wc::W
+    wi::W
+end
+
+mutable struct SigmaPointsMv{T, W}
+    m::Vector{T}
+    F::Matrix{T}
+    uplo::Char
+    x::Vector{T}
+    wm::W
+    wc::W
+    wi::W
+end
+
+# The weights for dimension `d`, warning when `d + λ` is negative.
+function sigma_weights(method::Unscented, d)
+    alpha = getα(method)
+    beta = getβ(method)
+    kappa = getκ(method)
+    lambda = d == 1 ? (1 + kappa) * alpha^2 - 1 : (d + kappa) * alpha^2 - d
+    if (d + lambda) < 0
+        @warn "`(d + lambda)` in the sigma points computation routine is negative. This may lead to the incorrect results. Adjust the `alpha`, `kappa` and `beta` parameters."
+    end
+    wm = lambda / (d + lambda)
+    wc = wm + (1 - alpha^2 + beta)
+    wi = 1 / (2 * (d + lambda))
+    return lambda, wm, wc, wi
+end
+
+function pointset(method::Unscented, m::Real, V::Real)
+    check_unscented_dimension(method, 1)
+    lambda, wm, wc, wi = sigma_weights(method, 1)
+    return SigmaPoints(m, sqrt((1 + lambda) * V), promote(wm, wc, wi)...)
+end
+
+function pointset(method::Unscented, m::AbstractVector, V::AbstractMatrix)
+    d = length(m)
+    check_unscented_dimension(method, d)
+    T = float(promote_type(eltype(m), eltype(V)))
+    _, wm, wc, wi = sigma_weights(method, d)
+    return SigmaPointsMv(Vector{T}(undef, d), Matrix{T}(undef, d, d), 'L', Vector{T}(undef, d), promote(wm, wc, wi)...)
+end
+
+# A scalar point set is a plain value: `prepare!` returns a new one.
+function prepare!(points::SigmaPoints{T, L, W}, method::Unscented, m::Real, V::Real) where {T, L, W}
+    check_unscented_dimension(method, 1)
+    lambda, wm, wc, wi = sigma_weights(method, 1)
+    return SigmaPoints{T, L, W}(m, sqrt((1 + lambda) * V), wm, wc, wi)
+end
+
+function prepare!(points::SigmaPointsMv, method::Unscented, m::AbstractVector, V::AbstractMatrix)
+    d = length(m)
+    check_unscented_dimension(method, d)
+    length(points.m) == d || throw(DimensionMismatch(lazy"the sigma points are for dimension $(length(points.m)), not $d"))
+    lambda, points.wm, points.wc, points.wi = sigma_weights(method, d)
+    copyto!(points.m, m)
+    points.F .= (d + lambda) .* V
+    points.uplo = cholesky_factor!(points.F, points.F)
+    return points
+end
+
+npoints(::SigmaPoints) = 3
+fixed_npoints(::SigmaPoints) = Val(3)
+is_value(::SigmaPoints) = true
+npoints(points::SigmaPointsMv) = 2 * length(points.m) + 1
+
+point!(points::SigmaPoints, i) = i == 1 ? points.m : (iseven(i) ? points.m + points.l : points.m - points.l)
+
+function point!(points::SigmaPointsMv, i)
+    x, m = points.x, points.m
+    if i == 1
+        copyto!(x, m)
+    else
+        k, sign = i ÷ 2, iseven(i) ? 1 : -1
+        @inbounds for r in eachindex(x)
+            x[r] = r < k ? m[r] : (sign > 0 ? m[r] + lower_entry(points.F, points.uplo, r, k) : m[r] - lower_entry(points.F, points.uplo, r, k))
+        end
+    end
+    return x
+end
+
+weight(points::Union{SigmaPoints, SigmaPointsMv}, i) = i == 1 ? points.wm : points.wi
+covweight(points::Union{SigmaPoints, SigmaPointsMv}, i) = i == 1 ? points.wc : points.wi
+center(points::Union{SigmaPoints, SigmaPointsMv}) = points.m
 
 """
     sigma_points_weights(method::Unscented, m::Real, V::Real) -> (points, weights_m, weights_c)
@@ -365,60 +315,23 @@ The `2d + 1` sigma points of `N(m, V)` under `method`'s parameters, and their we
 and for the covariance, in the same order: tuples for a scalar normal, vectors otherwise. The
 first point is the mean. It warns when the parameters make `d + λ` negative, which gives
 unreliable estimates.
+
+The point set of [`workspace`](@ref)`(method, f, m, V)` holds the same points without allocating
+them, for the in-place operations.
 """
 function sigma_points_weights(method::Unscented, m::Real, V::Real)
-    check_unscented_dimension(method, 1)
-    alpha = getα(method)
-    beta = getβ(method)
-    kappa = getκ(method)
-    lambda = (1 + kappa) * alpha^2 - 1
-
-    if (1 + lambda) < 0
-        @warn "`(1 + lambda)` in the sigma points computation routine is negative. This may lead to the incorrect results. Adjust the `alpha`, `kappa` and `beta` parameters."
-    end
-
-    l = sqrt((1 + lambda) * V)
-
-    sigma_points = (m, m + l, m - l)
-    weights_m = (lambda / (1 + lambda), 1 / (2 * (1 + lambda)), 1 / (2 * (1 + lambda)))
-    weights_c = (weights_m[1] + (1 - alpha^2 + beta), 1 / (2 * (1 + lambda)), 1 / (2 * (1 + lambda)))
-
+    points = prepared_pointset(method, m, V)
+    sigma_points = (point!(points, 1), point!(points, 2), point!(points, 3))
+    weights_m = (weight(points, 1), weight(points, 2), weight(points, 3))
+    weights_c = (covweight(points, 1), covweight(points, 2), covweight(points, 3))
     return (sigma_points, weights_m, weights_c)
 end
 
-function sigma_points_weights(
-        method::Unscented, m::AbstractVector, V::AbstractMatrix
-    )
-    d = length(m)
-    check_unscented_dimension(method, d)
-    alpha = getα(method)
-    beta = getβ(method)
-    kappa = getκ(method)
-    lambda = (d + kappa) * alpha^2 - d
-
-    if (d + lambda) < 0
-        @warn "`(d + lambda)` in the sigma points computation routine is negative. This may lead to the incorrect results. Adjust the `alpha`, `kappa` and `beta` parameters."
-    end
-
-    T = promote_type(eltype(m), eltype(V))
-
-    sigma_points = Vector{Vector{T}}(undef, 2 * d + 1)
-    weights_m = Vector{T}(undef, 2 * d + 1)
-    weights_c = Vector{T}(undef, 2 * d + 1)
-
-    L = cholsqrt((d + lambda) * V)
-
-    sigma_points[1] = m
-    weights_m[1] = lambda / (d + lambda)
-    weights_c[1] = weights_m[1] + (1 - alpha^2 + beta)
-
-    @inbounds for i in 1:d
-        @views sigma_points[2 * i] = m + L[:, i]
-        @views sigma_points[2 * i + 1] = m - L[:, i]
-    end
-
-    @inbounds weights_m[2:end] .= 1 / (2 * (d + lambda))
-    @inbounds weights_c[2:end] .= 1 / (2 * (d + lambda))
-
+function sigma_points_weights(method::Unscented, m::AbstractVector, V::AbstractMatrix)
+    points = prepared_pointset(method, m, V)
+    n = npoints(points)
+    sigma_points = [copy(point!(points, i)) for i in 1:n]
+    weights_m = [weight(points, i) for i in 1:n]
+    weights_c = [covweight(points, i) for i in 1:n]
     return (sigma_points, weights_m, weights_c)
 end

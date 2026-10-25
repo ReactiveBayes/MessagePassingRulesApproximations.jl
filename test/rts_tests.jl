@@ -160,3 +160,41 @@ end
         @test isfinite(C)
     end
 end
+
+@testitem "smoothRTS: the result is in the type every argument promotes to" tags = [:approximations] begin
+    using MessagePassingRulesApproximations, LinearAlgebra
+
+    # A vector input and output, with the backward message in Float32 and in BigFloat.
+    m_tilde, V_tilde, C_tilde = [0.5, -0.5], [2.0 0.3; 0.3 1.0], [1.0 0.5; 0.2 0.1; 0.0 0.3]
+    m_fw, V_fw = [0.1, 0.2, 0.3], Matrix(2.0I, 3, 3)
+    reference = smoothRTS(m_tilde, V_tilde, C_tilde, m_fw, V_fw, [1.0, 0.0], Matrix(1.0I, 2, 2))
+    m32, V32 = smoothRTS(Float32.(m_tilde), Float32.(V_tilde), Float32.(C_tilde), Float32.(m_fw), Float32.(V_fw), Float32[1, 0], Matrix(1.0f0I, 2, 2))
+    @test eltype(m32) === Float32 && eltype(V32) === Float32
+    mixed = smoothRTS(m_tilde, V_tilde, C_tilde, Float32.(m_fw), Float32.(V_fw), [1.0, 0.0], Matrix(1.0I, 2, 2))
+    @test eltype(mixed[1]) === Float64
+    @test all(mixed .≈ smoothRTS(m_tilde, V_tilde, C_tilde, Float64.(Float32.(m_fw)), V_fw, [1.0, 0.0], Matrix(1.0I, 2, 2)))
+    big = smoothRTS(m_tilde, V_tilde, C_tilde, m_fw, V_fw, BigFloat[1, 0], Matrix{BigFloat}(I, 2, 2))
+    @test eltype(big[1]) === BigFloat && all(big .≈ reference)
+    # A scalar output.
+    big = smoothRTS(0.5, 2.0, [1.0, 0.5, 0.2], m_fw, V_fw, big"1.0", 1.0)
+    @test eltype(big[1]) === BigFloat
+end
+
+@testitem "smoothRTS: a scalar input and a vector output, its cross-covariance a row" tags = [:approximations] begin
+    using MessagePassingRulesApproximations, LinearAlgebra
+
+    # The forward statistics of `x ↦ [x, 2x]` for x ~ N(1, 2), from both methods, smoothed with a
+    # backward message on the output: a scalar marginal, the same for the row and the adjoint.
+    f(x) = [x, 2x]
+    m_bw, V_bw = [2.0, 3.0], Matrix(1.0I, 2, 2)
+    for method in (Unscented(; alpha = 1.0), Linearization())
+        m_tilde, V_tilde, C_tilde = forward_statistics(method, f, (1.0,), (2.0,))
+        @test size(C_tilde) == (1, 2)
+        m_in, V_in = smoothRTS(m_tilde, V_tilde, C_tilde, 1.0, 2.0, m_bw, V_bw)
+        @test m_in isa Real && V_in isa Real
+        # The exact update: precision 1/2 + 1 + 4, mean (1/2 + 2 + 2·3) / precision.
+        @test V_in ≈ 1 / 5.5
+        @test m_in ≈ 8.5 / 5.5
+        @test all(smoothRTS(m_tilde, V_tilde, [2.0, 4.0]', 1.0, 2.0, m_bw, V_bw) .≈ (m_in, V_in))
+    end
+end

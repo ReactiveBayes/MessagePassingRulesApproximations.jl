@@ -74,6 +74,6 @@ UT
 UnscentedTransform
 approximate(::Unscented, ::F, ::Tuple, ::Tuple) where {F}
 unscented_statistics
-sigma_points_weights
+sigma_points_weights(::Unscented, ::Real, ::Real)
 MessagePassingRulesApproximations.sigma_point_parameters
 ```

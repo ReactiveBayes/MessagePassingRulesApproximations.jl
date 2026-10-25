@@ -74,3 +74,60 @@ function joint_mean_cov(means::Tuple, covs::Tuple)
     end
     return m, V, sizes
 end
+
+# The joint mean and covariance of independent inputs, into `m` and `V`: every entry written.
+function joint_mean_cov!(m::AbstractVector, V::AbstractMatrix, means::Tuple, covs::Tuple)
+    sizes = map(size, means)
+    starts = __starts_at(sizes)
+    foreach(means, starts) do mean, start
+        @inbounds __as_vec_copyto!(m, start, mean)
+    end
+    fill!(V, zero(eltype(V)))
+    foreach(covs, starts, sizes) do cov, start, size
+        block = start:(start + prod(size) - 1)
+        copy_block!(V, block, cov)
+    end
+    return m, V
+end
+
+copy_block!(V, block, cov::Real) = (V[first(block), first(block)] = cov; V)
+function copy_block!(V, block, cov::AbstractMatrix)
+    for (j, J) in enumerate(block), (i, I) in enumerate(block)
+        V[I, J] = cov[i, j]
+    end
+    return V
+end
+
+## Square roots of covariances
+
+# The lower Cholesky factor of `V`, into `F`: `fastcholesky!` of a copy, in place, so the same
+# factor as `cholsqrt(V)`, with no allocation when `V` is positive definite. Returns how the
+# factor is stored: 'L', the lower triangle of `F`, or 'U', its transpose in the upper triangle;
+# the other triangle is not zeroed.
+function cholesky_factor!(F::AbstractMatrix, V::AbstractMatrix)
+    copyto!(F, V)
+    C = fastcholesky!(F)
+    C.factors === F || copyto!(F, C.factors)
+    return C.uplo
+end
+
+# The entry `(r, k)` of the lower factor stored in `F`, zero above the diagonal.
+@inline lower_entry(F, uplo, r, k) = r < k ? zero(eltype(F)) : (uplo == 'L' ? F[r, k] : F[k, r])
+
+# `x = m + s L u`, with `L` the lower factor stored in `F`.
+function lower_mul_add!(x::AbstractVector, m::AbstractVector, s, F::AbstractMatrix, uplo::Char, u::AbstractVector)
+    @inbounds for r in eachindex(x)
+        acc = zero(eltype(x))
+        if uplo == 'L'
+            for k in 1:r
+                acc += F[r, k] * u[k]
+            end
+        else
+            for k in 1:r
+                acc += F[k, r] * u[k]
+            end
+        end
+        x[r] = m[r] + s * acc
+    end
+    return x
+end
