@@ -39,9 +39,10 @@
     @test sum(weights .* points) ≈ μ
     @test sum(w * (x - μ) * (x - μ)' for (w, x) in zip(weights, points)) ≈ Σ
 
-    # Exact for a cubic of a normal, where the unscented transform is not: E[x³] = m³ + 3mv.
+    # Exact for a quartic of a normal, where the unscented transform is not: E[x⁴] = m⁴ + 6m²v + 3v².
     m, v = 0.5, 0.3
-    @test expectation(GenUnscented(), x -> x^3, m, v) ≈ m^3 + 3m * v
+    @test expectation(GenUnscented(), x -> x^4, m, v) ≈ m^4 + 6m^2 * v + 3v^2
+    @test !(expectation(Unscented(), x -> x^4, m, v) ≈ m^4 + 6m^2 * v + 3v^2)
     @test first(approximate(GenUnscented(), x -> x^2, m, v)) ≈ m^2 + v
 end
 

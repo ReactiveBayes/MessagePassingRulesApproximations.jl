@@ -147,7 +147,8 @@ end
 
 # The eigenvalues of the symmetric tridiagonal matrix with diagonal `d` and off-diagonal `e[1:n-1]`,
 # into `d`, and the first components of its eigenvectors into `z`, which starts as the first unit
-# vector: the implicit QL method with Wilkinson shifts (`tqli`).
+# vector: the implicit QL method with Wilkinson shifts (`tqli`). The Jacobi matrices here have
+# entries of the order of `2n + a`, so the rotations need no overflow-safe `hypot`.
 function symmetric_tridiagonal_ql!(d::AbstractVector{T}, e::AbstractVector{T}, z::AbstractVector{T}) where {T}
     n = length(d)
     for l in 1:n
@@ -161,13 +162,13 @@ function symmetric_tridiagonal_ql!(d::AbstractVector{T}, e::AbstractVector{T}, z
             m == l && break
             (iterations += 1) > 60 && return false
             g = (d[l + 1] - d[l]) / (2 * e[l])
-            r = hypot(g, one(T))
+            r = sqrt(g * g + one(T))
             g = d[m] - d[l] + e[l] / (g + copysign(r, g))
             s, c, p = one(T), one(T), zero(T)
             underflow = false
             for i in (m - 1):-1:l
                 f, b = s * e[i], c * e[i]
-                r = hypot(f, g)
+                r = sqrt(f * f + g * g)
                 e[i + 1] = r
                 if iszero(r)
                     d[i + 1] -= p

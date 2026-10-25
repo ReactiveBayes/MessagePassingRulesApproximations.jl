@@ -77,13 +77,15 @@ end
 # A normal in `d` dimensions: the tensor-product grid of `p^d` points, `m + √2 L ξ`, with `L` the
 # lower Cholesky factor of the covariance. A point's index is decoded into one node per dimension,
 # the first dimension varying fastest.
-mutable struct HermiteGridPoints{N, T}
+mutable struct HermiteGridPoints{N, T, W}
     nodes::N
     m::Vector{T}
     F::Matrix{T}
     uplo::Char
     unit::Vector{T}
     x::Vector{T}
+    # `π^(-d/2)`, which normalises a product of `d` weights.
+    normalisation::W
 end
 
 pointset(gh::GaussHermiteCubature, m::Real, v::Real) = HermitePoints(gh, m, sqrt(2 * v))
@@ -91,7 +93,7 @@ pointset(gh::GaussHermiteCubature, m::Real, v::Real) = HermitePoints(gh, m, sqrt
 function pointset(gh::GaussHermiteCubature, m::AbstractVector, V::AbstractMatrix)
     T = float(promote_type(eltype(m), eltype(V)))
     d = length(m)
-    return HermiteGridPoints(gh, Vector{T}(undef, d), Matrix{T}(undef, d, d), 'L', Vector{T}(undef, d), Vector{T}(undef, d))
+    return HermiteGridPoints(gh, Vector{T}(undef, d), Matrix{T}(undef, d, d), 'L', Vector{T}(undef, d), Vector{T}(undef, d), inv(π^(d / 2)))
 end
 
 check_nodes(points, gh) = length(points.nodes.piter) == length(gh.piter) ||
@@ -111,6 +113,7 @@ function prepare!(points::HermiteGridPoints, gh::GaussHermiteCubature, m::Abstra
     points.nodes = gh
     copyto!(points.m, m)
     points.uplo = cholesky_factor!(points.F, V)
+    points.normalisation = inv(π^(length(m) / 2))
     return points
 end
 
@@ -138,7 +141,7 @@ function weight(points::HermiteGridPoints, i)
         w *= points.nodes.witer[index % p + 1]
         index ÷= p
     end
-    return w / π^(length(points.m) / 2)
+    return w * points.normalisation
 end
 
 function logweight(points::HermiteGridPoints, i)
@@ -148,7 +151,7 @@ function logweight(points::HermiteGridPoints, i)
         lw += log(points.nodes.witer[index % p + 1])
         index ÷= p
     end
-    return lw - length(points.m) * log(π) / 2
+    return lw + log(points.normalisation)
 end
 
 center(points::HermiteGridPoints) = points.m
