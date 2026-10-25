@@ -219,13 +219,15 @@ approximate(method::Linearization, f::F, means::Tuple, covs::Tuple) where {F} = 
 joint_moments(ws::LinearizationWorkspace{F, X, A, B, C, Nothing}, means, covs) where {F, X, A, B, C} = (first(means), first(covs))
 joint_moments(ws::LinearizationWorkspace, means, covs) = joint_mean_cov!(ws.μ, ws.Σ, means, covs)
 
+# The outputs in the type the map and the covariances promote to, as `A * Σ * A'` gives.
 linear_statistics_into(ws::LinearizationWorkspace{F, Nothing, Nothing}, f, means, covs, r) where {F} = linear_statistics!(ws, f, means, covs, r)
 linear_statistics_into(ws::LinearizationWorkspace{F, X, <:AbstractVector, Nothing}, f, means, covs, r) where {F, X} =
-    linear_statistics!(similar(ws.A), ws, f, means, covs, r)
+    linear_statistics!(similar(ws.A, promote_type(eltype(ws.A), map(eltype, covs)...)), ws, f, means, covs, r)
 function linear_statistics_into(ws::LinearizationWorkspace{F, X, A}, f, means, covs, r) where {F, X, A}
+    T = promote_type(eltype(ws.A), eltype(ws.b), map(eltype, covs)...)
     d_out = length(ws.b)
     d_in = A <: AbstractMatrix ? size(ws.A, 2) : 1
-    return linear_statistics!(similar(ws.b), similar(ws.b, d_out, d_out), similar(ws.b, d_in, d_out), ws, f, means, covs, r)
+    return linear_statistics!(similar(ws.b, T), similar(ws.b, T, d_out, d_out), similar(ws.b, T, d_in, d_out), ws, f, means, covs, r)
 end
 
 forward_statistics!(ws::LinearizationWorkspace, ::Linearization, f::G, means::Tuple, covs::Tuple) where {G} = linear_statistics!(ws, f, means, covs, nothing)

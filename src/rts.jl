@@ -42,7 +42,8 @@ function smoothRTS(
     arguments = (m_tilde, V_tilde, C_tilde, m_fw_in, V_fw_in, m_bw_out, V_bw_out)
     arguments isa RTSVectorArguments || return smoothRTS_generic(arguments...)
     ws = workspace(smoothRTS, arguments...)
-    T = promote_type(eltype(m_fw_in), eltype(V_fw_in), eltype(C_tilde))
+    # In the type every argument promotes to, as the equations themselves give.
+    T = float(promote_type(map(eltype, arguments)...))
     return smoothRTS!(similar(m_fw_in, T), similar(V_fw_in, T), ws, arguments...)
 end
 
@@ -74,7 +75,7 @@ workspace(::typeof(smoothRTS), m_tilde::Real, V_tilde::Real, C_tilde::AbstractVe
     RTSWorkspace(nothing, nothing, nothing)
 
 function workspace(::typeof(smoothRTS), m_tilde::AbstractVector, V_tilde::AbstractMatrix, C_tilde::AbstractMatrix, m_fw_in, V_fw_in, m_bw_out, V_bw_out)
-    T = float(promote_type(eltype(V_tilde), eltype(V_bw_out), eltype(C_tilde)))
+    T = float(promote_type(eltype(m_tilde), eltype(V_tilde), eltype(C_tilde), eltype(m_bw_out), eltype(V_bw_out)))
     d_out, d_in = length(m_tilde), size(C_tilde, 1)
     return RTSWorkspace(Matrix{T}(undef, d_out, d_out), Matrix{T}(undef, d_out, d_in), Vector{T}(undef, d_out))
 end

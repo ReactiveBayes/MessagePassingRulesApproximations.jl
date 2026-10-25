@@ -160,3 +160,22 @@ end
         @test isfinite(C)
     end
 end
+
+@testitem "smoothRTS: the result is in the type every argument promotes to" tags = [:approximations] begin
+    using MessagePassingRulesApproximations, LinearAlgebra
+
+    # A vector input and output, with the backward message in Float32 and in BigFloat.
+    m_tilde, V_tilde, C_tilde = [0.5, -0.5], [2.0 0.3; 0.3 1.0], [1.0 0.5; 0.2 0.1; 0.0 0.3]
+    m_fw, V_fw = [0.1, 0.2, 0.3], Matrix(2.0I, 3, 3)
+    reference = smoothRTS(m_tilde, V_tilde, C_tilde, m_fw, V_fw, [1.0, 0.0], Matrix(1.0I, 2, 2))
+    m32, V32 = smoothRTS(Float32.(m_tilde), Float32.(V_tilde), Float32.(C_tilde), Float32.(m_fw), Float32.(V_fw), Float32[1, 0], Matrix(1.0f0I, 2, 2))
+    @test eltype(m32) === Float32 && eltype(V32) === Float32
+    mixed = smoothRTS(m_tilde, V_tilde, C_tilde, Float32.(m_fw), Float32.(V_fw), [1.0, 0.0], Matrix(1.0I, 2, 2))
+    @test eltype(mixed[1]) === Float64
+    @test all(mixed .≈ smoothRTS(m_tilde, V_tilde, C_tilde, Float64.(Float32.(m_fw)), V_fw, [1.0, 0.0], Matrix(1.0I, 2, 2)))
+    big = smoothRTS(m_tilde, V_tilde, C_tilde, m_fw, V_fw, BigFloat[1, 0], Matrix{BigFloat}(I, 2, 2))
+    @test eltype(big[1]) === BigFloat && all(big .≈ reference)
+    # A scalar output.
+    big = smoothRTS(0.5, 2.0, [1.0, 0.5, 0.2], m_fw, V_fw, big"1.0", 1.0)
+    @test eltype(big[1]) === BigFloat
+end

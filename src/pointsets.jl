@@ -437,9 +437,12 @@ end
 # The array-valued outputs of `approximate` and `forward_statistics` for a workspace.
 moment_outputs(ws::PointSetWorkspace) = (similar(ws.dy), similar(ws.dy, length(ws.dy), length(ws.dy)))
 cross_output(ws::PointSetWorkspace{P, L, <:AbstractVector, Nothing}) where {P, L} = nothing
-cross_output(ws::PointSetWorkspace{P, L, <:AbstractVector, <:AbstractVector}) where {P, L} = similar(ws.dx, eltype(ws.ys))
-cross_output(ws::PointSetWorkspace{P, L, <:AbstractMatrix, Nothing}) where {P, L} = similar(ws.dy, 1, length(ws.dy))
-cross_output(ws::PointSetWorkspace{P, L, <:AbstractMatrix, <:AbstractVector}) where {P, L} = similar(ws.dy, length(ws.dx), length(ws.dy))
+# The cross-covariance multiplies points by values: in the type both promote to.
+cross_output(ws::PointSetWorkspace{P, L, <:AbstractVector, <:AbstractVector}) where {P, L} = similar(ws.dx, promote_type(eltype(ws.ys), eltype(ws.dx)))
+cross_output(ws::PointSetWorkspace{P, L, <:AbstractMatrix, Nothing}) where {P, L} =
+    similar(ws.dy, promote_type(eltype(ws.dy), typeof(center(ws.points))), 1, length(ws.dy))
+cross_output(ws::PointSetWorkspace{P, L, <:AbstractMatrix, <:AbstractVector}) where {P, L} =
+    similar(ws.dy, promote_type(eltype(ws.dy), eltype(ws.dx)), length(ws.dx), length(ws.dy))
 
 """
     approximate(method, f, params...) -> (m, V)
