@@ -50,6 +50,15 @@ end
         @test allocations(expectation!, m, vws, method, two_values, 0.5, 0.2) == 0
     end
 
+    # The allocating forms on scalars allocate nothing either, the point sets being values and
+    # their values a tuple.
+    for method in (Unscented(), GenUnscented())
+        @test allocations(approximate, method, square, 0.5, 0.2) == 0
+        @test allocations(forward_statistics, method, square, 0.5, 0.2) == 0
+        @test allocations(expectation, method, square, 0.5, 0.2) == 0
+    end
+    @test allocations(approximate, Unscented(), square, (0.5,), (0.2,)) == 0
+
     # A gamma, by Gauss–Laguerre, for any shape: the nodes are computed in place.
     gl = GaussLaguerreQuadrature(12)
     ws = workspace(gl, square, 2.0, 1.5)

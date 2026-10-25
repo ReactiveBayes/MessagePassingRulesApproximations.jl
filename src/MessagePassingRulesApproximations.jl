@@ -49,7 +49,7 @@ export GaussLaguerreQuadrature, glquadrature
 
 @compat public sigma_point_parameters
 @compat public GenUnscented, GenUT, GenUnscentedTransform, GenConstrainedUnscented, GenCUT
-@compat public AbstractWorkspace, workspace, pointset, prepare!, npoints, point!, weight, covweight, logweight, weightsign, center
+@compat public AbstractWorkspace, workspace, pointset, prepare!, npoints, point!, weight, covweight, logweight, weightsign, center, is_value
 
 include("approximations.jl")
 include("shared.jl")

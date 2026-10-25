@@ -194,7 +194,15 @@ end
 held(::Val{true}, points) = points
 held(::Val{false}, points) = is_value(points) ? HeldPoints(points) : points
 
-# Whether a point set is a plain value, which `prepare!` replaces rather than writes into.
+"""
+    is_value(points) -> Bool
+
+Whether the point set `points` is a plain, immutable value, which [`prepare!`](@ref) returns
+anew rather than writes into, as the scalar point sets of the unscented transform and of
+Gauss–Hermite cubature are: they then live on the stack in the allocating operations, and a
+workspace holds them in a mutable holder. `false` by default; a method whose point set is
+immutable returns `true`.
+"""
 is_value(points) = false
 
 npoints(held::HeldPoints) = npoints(held.points)
@@ -228,7 +236,11 @@ point_buffer(x::AbstractVector) = similar(x)
 
 prepare_workspace!(ws::PointSetWorkspace, method, params::Vararg{Any, N}) where {N} = (prepare_points!(ws.points, method, params...); ws)
 
-prepare_points!(points, method, params::Vararg{Any, N}) where {N} = prepare!(points, method, params...)
+function prepare_points!(points, method, params::Vararg{Any, N}) where {N}
+    prepared = prepare!(points, method, params...)
+    prepared === points || throw(ArgumentError("`prepare!` returned a new point set, which a workspace cannot keep: an immutable point set declares `is_value`"))
+    return points
+end
 prepare_points!(held::HeldPoints, method, params::Vararg{Any, N}) where {N} = (held.points = prepare!(held.points, method, params...); held)
 
 # `f` at the `i`-th point, or `first_value` for the first point when the caller has it.

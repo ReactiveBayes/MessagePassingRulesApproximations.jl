@@ -127,14 +127,15 @@ it. A rule declares it from its inputs and calls the in-place form in its body:
 ## Adding a method
 
 A method becomes a point-set method, with every operation above and their in-place forms, by
-implementing six functions for its point set, a type of its own:
+implementing these functions for its point set, a type of its own:
 
 - [`pointset`](@ref MessagePassingRulesApproximations.pointset)`(method, params...)`: the point set, its buffers allocated for parameters of
   these shapes;
 - [`prepare!`](@ref MessagePassingRulesApproximations.prepare!)`(points, method, params...)`: places the points, writing every buffer it
   reads;
 - [`npoints`](@ref MessagePassingRulesApproximations.npoints), [`point!`](@ref MessagePassingRulesApproximations.point!), [`weight`](@ref MessagePassingRulesApproximations.weight) and [`center`](@ref MessagePassingRulesApproximations.center), and optionally
-  [`covweight`](@ref MessagePassingRulesApproximations.covweight), [`logweight`](@ref MessagePassingRulesApproximations.logweight) and [`weightsign`](@ref MessagePassingRulesApproximations.weightsign).
+  [`covweight`](@ref MessagePassingRulesApproximations.covweight), [`logweight`](@ref MessagePassingRulesApproximations.logweight) and [`weightsign`](@ref MessagePassingRulesApproximations.weightsign);
+- [`is_value`](@ref MessagePassingRulesApproximations.is_value), for a point set that is an immutable value, which `prepare!` returns anew.
 
 A method that defines only [`getpoints`](@ref) and [`getweights`](@ref) for a normal still works
 with every operation, collecting its points on each call, which allocates.
@@ -160,4 +161,5 @@ MessagePassingRulesApproximations.covweight
 MessagePassingRulesApproximations.logweight
 MessagePassingRulesApproximations.weightsign
 MessagePassingRulesApproximations.center
+MessagePassingRulesApproximations.is_value
 ```
